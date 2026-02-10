@@ -1,9 +1,9 @@
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+from typing import AsyncGenerator
 
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
@@ -22,19 +22,36 @@ database_name = get_env_var('DATABASE_NAME')
 database_user = get_env_var('DATABASE_USER')
 database_pass = get_env_var('DATABASE_PASS')
 
+# Use postgresql+asyncpg instead of postgresql
 SQLALCHEMY_DATABASE_URL = (
-    f'postgresql://{database_user}:{database_pass}@{database_host}:{database_port}/{database_name}'
+    f'postgresql+asyncpg://{database_user}:{database_pass}@{database_host}:{database_port}/{database_name}'
 )
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_async_engine(
+    SQLALCHEMY_DATABASE_URL, 
+    future=True,
+    pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
+    pool_pre_ping=True,
+    pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
+)
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+AsyncSessionFactory = sessionmaker(
+    bind=engine, 
+    class_=AsyncSession, 
+    expire_on_commit=False
+)
+
+# Create Base here
 Base = declarative_base()
 
-# Dependency for FastAPI
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionFactory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()

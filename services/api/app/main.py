@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from app.database import engine
+from app.database import engine, AsyncSessionFactory
 from app import models
+from app.routers import systems
 
-models.Base.metadata.create_all(bind=engine)
+#models.Base.metadata.create_all(bind=engine)
 
 api_description = """
 This API provides a standards-based framework for managing **observational data and metadata**.  
@@ -124,6 +125,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+app.include_router(systems.router, prefix="/api/v1/systems", tags=["Systems"])
 
 
 @app.get("/")

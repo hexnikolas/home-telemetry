@@ -1,6 +1,8 @@
-from sqlalchemy import Column, String, Text, Boolean, Float, ForeignKey, Enum, Index, PrimaryKeyConstraint, event, TIMESTAMP, ARRAY, DDL
+from sqlalchemy import String, Text, Boolean, Float, ForeignKey, Enum, Index, PrimaryKeyConstraint, event, TIMESTAMP, ARRAY, DDL, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSON
-from sqlalchemy.sql import func
+from typing import Optional, List
+from datetime import datetime
 from .database import Base
 import uuid
 import enum
@@ -83,7 +85,7 @@ class ControlStreamTypes(enum.Enum):
 class StatusCode(enum.Enum):
     PENDING = "PENDING"                              # The command is pending, meaning it has been received by the system but no decision to accept or reject it has been made.
     ACCEPTED = "ACCEPTED"                            # The command was accepted by the receiving system. This usually means that the command has passed the first validation steps, but it can still be rejected or fail later during execution.
-    REJECTED = "REJECTED"                            # The command was rejected by the receiving system. It won’t be executed at all and the message property provides the reason for the rejection. This is a final state. No further status updates will be sent.
+    REJECTED = "REJECTED"                            # The command was rejected by the receiving system. It won't be executed at all and the message property provides the reason for the rejection. This is a final state. No further status updates will be sent.
     SCHEDULED = "SCHEDULED"                          # The command was validated and effectively scheduled by the receiving system. When this status code is used, the scheduled execution time must be provided.
     UPDATED = "UPDATED"                              # An update to the command was received and accepted. This code must be used if the system supports task updates.
     CANCELED = "CANCELED"                            # The command was canceled by an authorized user. This code must be used if the system supports user-driven task cancellations. The REJECTED state should be used instead if the command was canceled by the receiving system. This is a final state. No further status updates will be sent.
@@ -109,117 +111,374 @@ class ResponseStatus(enum.Enum):
 class AbstractConcreteBase(Base):
     __abstract__ = True
 
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), comment='Record creation timestamp')
-    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), comment='Record last update timestamp')
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), 
+        server_default=func.now(), 
+        comment='Record creation timestamp'
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), 
+        server_default=func.now(), 
+        onupdate=func.now(), 
+        comment='Record last update timestamp'
+    )
 
 
 class System(AbstractConcreteBase):
     __tablename__ = "systems"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    name = Column(Text, nullable=False, comment='Human readable name')
-    description = Column(Text, comment='Human readable description')
-    system_type = Column(Enum(SystemTypes), nullable=False, comment='The type of system')
-    external_id = Column(String, unique=True, index=True, comment="External reference ID (e.g., MQTT ID)")
-    is_mobile = Column(Boolean, default=False, comment='Indicates if the system is mobile or stationary')
-    is_gps_enabled = Column(Boolean, nullable=False, default=False, comment='Indicates if the system provides GPS location with observations')
-    manufacturer = Column(String, comment='The manufacturer of the system')
-    model = Column(String, comment='The model of the system')
-    serial_number = Column(String, comment='The serial number of the system')
-    properties = Column(JSON)
-    media_links = Column(ARRAY(String), default=list, comment='Links to images, documents, or other media related to the system')
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        primary_key=True, 
+        index=True, 
+        default=uuid.uuid4,
+        comment='Internal primary key for the system'
+    )
+    name: Mapped[str] = mapped_column(Text, comment='Human readable name')
+    description: Mapped[Optional[str]] = mapped_column(Text, comment='Human readable description')
+    system_type: Mapped[SystemTypes] = mapped_column(Enum(SystemTypes), comment='The type of system')
+    external_id: Mapped[Optional[str]] = mapped_column(
+        String, 
+        unique=True, 
+        index=True, 
+        comment="External reference ID (e.g., MQTT ID)"
+    )
+    is_mobile: Mapped[bool] = mapped_column(
+        Boolean, 
+        default=False, 
+        comment='Indicates if the system is mobile or stationary'
+    )
+    is_gps_enabled: Mapped[bool] = mapped_column(
+        Boolean, 
+        default=False, 
+        comment='Indicates if the system provides GPS location with observations'
+    )
+    manufacturer: Mapped[Optional[str]] = mapped_column(String, comment='The manufacturer of the system')
+    model: Mapped[Optional[str]] = mapped_column(String, comment='The model of the system')
+    serial_number: Mapped[Optional[str]] = mapped_column(String, comment='The serial number of the system')
+    properties: Mapped[Optional[dict]] = mapped_column(JSON)
+    media_links: Mapped[Optional[List[str]]] = mapped_column(
+        ARRAY(String), 
+        default=list, 
+        comment='Links to images, documents, or other media related to the system'
+    )
+    
+        # Relationships - FIXED
+    subsystems: Mapped[List["Subsystem"]] = relationship(
+        foreign_keys="[Subsystem.parent_system_id]",
+        back_populates="parent_system",
+        cascade="all, delete-orphan"
+    )
+    parent_systems: Mapped[List["Subsystem"]] = relationship(
+        foreign_keys="[Subsystem.system_id]",
+        back_populates="subsystem",
+        cascade="all, delete-orphan"
+    )
+    deployments: Mapped[List["Deployment"]] = relationship(
+        back_populates="system", 
+        cascade="all, delete-orphan"
+    )
+    datastreams: Mapped[List["Datastream"]] = relationship(
+        foreign_keys="[Datastream.system_id]",  # Specify system_id
+        back_populates="system", 
+        cascade="all, delete-orphan"
+    )
+    tasking_capabilities: Mapped[List["TaskingCapability"]] = relationship(
+        back_populates="system", 
+        cascade="all, delete-orphan"
+    )
+    control_streams: Mapped[List["ControlStream"]] = relationship(
+        foreign_keys="[ControlStream.system_id]",  # Specify system_id
+        back_populates="system", 
+        cascade="all, delete-orphan"
+    )
 
 
 class Subsystem(AbstractConcreteBase):
     __tablename__ = "subsystems"
 
-    system_id = Column(PG_UUID(as_uuid=True), ForeignKey("systems.id"), primary_key=True, comment='The subsystem itself, which is a System resource')
-    parent_system_id = Column(PG_UUID(as_uuid=True), ForeignKey("systems.id"), primary_key=True, comment='The parent System that this subsystem is part of')
-    composition = Column(Boolean, comment='Indicates if the relationship is composition (true) or aggregation (false)')
+    system_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("systems.id"), 
+        primary_key=True, 
+        comment='The subsystem itself, which is a System resource'
+    )
+    parent_system_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("systems.id"), 
+        primary_key=True, 
+        comment='The parent System that this subsystem is part of'
+    )
+    composition: Mapped[Optional[bool]] = mapped_column(
+        Boolean, 
+        comment='Indicates if the relationship is composition (true) or aggregation (false)'
+    )
+
+    # Relationships
+    subsystem: Mapped["System"] = relationship(
+        foreign_keys=[system_id],
+        back_populates="parent_systems"
+    )
+    parent_system: Mapped["System"] = relationship(
+        foreign_keys=[parent_system_id],
+        back_populates="subsystems"
+    )
 
 
 class Deployment(AbstractConcreteBase):
     __tablename__ = "deployments"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    system_id = Column(PG_UUID(as_uuid=True), ForeignKey("systems.id"), comment="The system deployed during the deployment")
-    name = Column(String, nullable=False, comment='Human readable name of the deployment')
-    description = Column(Text, comment='Human readable description of the deployment')
-    deployment_type = Column(Enum(DeploymentTypes), nullable=False, comment='The type of deployment')
-    location = Column(Text, comment='The location or area where the systems are deployed.')
-    properties = Column(JSON)
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        primary_key=True, 
+        index=True, 
+        default=uuid.uuid4,
+        comment='Internal primary key for the deployment'
+    )
+    system_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("systems.id"), 
+        comment="The system deployed during the deployment"
+    )
+    name: Mapped[str] = mapped_column(String, comment='Human readable name of the deployment')
+    description: Mapped[Optional[str]] = mapped_column(Text, comment='Human readable description of the deployment')
+    deployment_type: Mapped[DeploymentTypes] = mapped_column(
+        Enum(DeploymentTypes), 
+        comment='The type of deployment'
+    )
+    location: Mapped[Optional[str]] = mapped_column(
+        Text, 
+        comment='The location or area where the systems are deployed.'
+    )
+    properties: Mapped[Optional[dict]] = mapped_column(JSON)
+
+    # Relationships
+    system: Mapped[Optional["System"]] = relationship(back_populates="deployments")
+    datastreams: Mapped[List["Datastream"]] = relationship(back_populates="deployment")
+    control_streams: Mapped[List["ControlStream"]] = relationship(back_populates="deployment")
+
 
 
 class Procedure(AbstractConcreteBase):
     __tablename__ = "procedures"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    name = Column(String, nullable=False, comment="Human readable name of the procedure")
-    description = Column(Text, comment="Human readable description of the procedure")
-    procedure_type = Column(Enum(ProcedureTypes), comment="Type of procedure")
-    reference = Column(String, comment="Reference or citation for the procedure (e.g., ISO standard, document link)")
-    steps = Column(ARRAY(String), default=list, comment="Steps involved in the procedure")
-    properties = Column(JSON)
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        primary_key=True, 
+        index=True, 
+        default=uuid.uuid4,
+        comment='Internal primary key for the procedure'
+    )
+    name: Mapped[str] = mapped_column(String, comment="Human readable name of the procedure")
+    description: Mapped[Optional[str]] = mapped_column(Text, comment="Human readable description of the procedure")
+    procedure_type: Mapped[Optional[ProcedureTypes]] = mapped_column(
+        Enum(ProcedureTypes), 
+        comment="Type of procedure"
+    )
+    reference: Mapped[Optional[str]] = mapped_column(
+        String, 
+        comment="Reference or citation for the procedure (e.g., ISO standard, document link)"
+    )
+    steps: Mapped[Optional[List[str]]] = mapped_column(
+        ARRAY(String), 
+        default=list, 
+        comment="Steps involved in the procedure"
+    )
+    properties: Mapped[Optional[dict]] = mapped_column(JSON)
+
+    # Relationships
+    datastreams: Mapped[List["Datastream"]] = relationship(back_populates="procedure")
+    control_streams: Mapped[List["ControlStream"]] = relationship(back_populates="procedure")
+
 
 
 class FeatureOfInterest(AbstractConcreteBase):
     __tablename__ = "features_of_interest"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    name = Column(String, nullable=False, comment="Human readable name of the feature of interest")
-    description = Column(Text, comment="Human readable description of the feature of interest")
-    feature_type = Column(Enum(FeatureOfInterestTypes), nullable=False, comment="The type of feature of interest")
-    reference = Column(String, comment="Reference or citation for the feature of interest")
-    location = Column(Text, comment='The location of the sampling feature.')
-    properties = Column(JSON)
-    media_links = Column(ARRAY(String), default=list, comment='Links to images, documents, or other media related to the feature of interest')
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        primary_key=True, 
+        index=True, 
+        default=uuid.uuid4,
+        comment='Internal primary key for the feature of interest'
+    )
+    name: Mapped[str] = mapped_column(String, comment="Human readable name of the feature of interest")
+    description: Mapped[Optional[str]] = mapped_column(
+        Text, 
+        comment="Human readable description of the feature of interest"
+    )
+    feature_type: Mapped[FeatureOfInterestTypes] = mapped_column(
+        Enum(FeatureOfInterestTypes), 
+        comment="The type of feature of interest"
+    )
+    reference: Mapped[Optional[str]] = mapped_column(
+        String, 
+        comment="Reference or citation for the feature of interest"
+    )
+    location: Mapped[Optional[str]] = mapped_column(Text, comment='The location of the sampling feature.')
+    properties: Mapped[Optional[dict]] = mapped_column(JSON)
+    media_links: Mapped[Optional[List[str]]] = mapped_column(
+        ARRAY(String), 
+        default=list, 
+        comment='Links to images, documents, or other media related to the feature of interest'
+    )
+
+    # Relationships
+    datastreams: Mapped[List["Datastream"]] = relationship(back_populates="feature_of_interest")
+    control_streams: Mapped[List["ControlStream"]] = relationship(back_populates="feature_of_interest")
 
 
 class ObservedProperty(AbstractConcreteBase):
     __tablename__ = "observed_properties"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    name = Column(String, nullable=False, comment="Human-readable name of the observed property")
-    description = Column(String, comment="Description of the observed property")
-    domain = Column(Enum(ObservedProperyDomains), nullable=False, comment="Domain or category of the observed property")
-    property_definition = Column(String, comment="Reference to the base property definition")
-    unit_definition = Column(String, comment="Unit of measurement for the observed property")
-    unit_symbol = Column(String, comment="Symbol for the unit of measurement (e.g., °C, m/s)")
-    reference = Column(String, comment="Wikipedia (or other knowledge base) link for human-readable reference")
-    keywords = Column(ARRAY(String), default=list, comment="Synonyms or related search terms")
-    value_type = Column(Enum(ValueTypes), nullable=False, comment="Data type of the observed property value")
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        primary_key=True, 
+        index=True, 
+        default=uuid.uuid4,
+        comment='Internal primary key for the observed property'
+    )
+    name: Mapped[str] = mapped_column(String, comment="Human-readable name of the observed property")
+    description: Mapped[Optional[str]] = mapped_column(String, comment="Description of the observed property")
+    domain: Mapped[ObservedProperyDomains] = mapped_column(
+        Enum(ObservedProperyDomains), 
+        comment="Domain or category of the observed property"
+    )
+    property_definition: Mapped[Optional[str]] = mapped_column(
+        String, 
+        comment="Reference to the base property definition"
+    )
+    unit_definition: Mapped[Optional[str]] = mapped_column(
+        String, 
+        comment="Unit of measurement for the observed property"
+    )
+    unit_symbol: Mapped[Optional[str]] = mapped_column(
+        String, 
+        comment="Symbol for the unit of measurement (e.g., °C, m/s)"
+    )
+    reference: Mapped[Optional[str]] = mapped_column(
+        String, 
+        comment="Wikipedia (or other knowledge base) link for human-readable reference"
+    )
+    keywords: Mapped[Optional[List[str]]] = mapped_column(
+        ARRAY(String), 
+        default=list, 
+        comment="Synonyms or related search terms"
+    )
+    value_type: Mapped[ValueTypes] = mapped_column(
+        Enum(ValueTypes), 
+        comment="Data type of the observed property value"
+    )
+
+    # Relationships
+    datastreams: Mapped[List["Datastream"]] = relationship(back_populates="observed_property")
+
 
 
 class Datastream(AbstractConcreteBase):
     __tablename__ = "datastreams"
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        primary_key=True, 
+        index=True, 
+        default=uuid.uuid4,
+        comment='Internal primary key for the datastream'
+    )
+    name: Mapped[str] = mapped_column(String, comment="Human readable name of the datastream")
+    description: Mapped[Optional[str]] = mapped_column(Text, comment="Human readable description of the datastream")
+    system_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("systems.id"), 
+        comment="System generating this datastream"
+    )
+    observed_property_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("observed_properties.id"), 
+        comment="Observed property linked to this datastream"
+    )
+    deployment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("deployments.id"), 
+        comment="Deployment during which this datastream was generated"
+    )
+    procedure_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("procedures.id"), 
+        comment="Procedure used for generating observations"
+    )
+    feature_of_interest_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("features_of_interest.id"), 
+        comment="Optional feature of interest this datastream observes"
+    )
+    external_id: Mapped[Optional[str]] = mapped_column(
+        String, 
+        ForeignKey("systems.external_id"), 
+        index=True, 
+        comment="External reference ID (e.g., MQTT topic ID)"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, 
+        default=True, 
+        comment="Indicates if the datastream is currently active"
+    )
+    is_gps_enabled: Mapped[bool] = mapped_column(
+        Boolean, 
+        comment="Indicates if the datastream provides GPS location with observations"
+    )
+    observation_result_type: Mapped[ValueTypes] = mapped_column(
+        Enum(ValueTypes), 
+        comment="Data type of the observation results in this datastream"
+    )
+    properties: Mapped[Optional[dict]] = mapped_column(
+        JSON, 
+        comment="Additional metadata or custom properties of the datastream"
+    )
+    # Relationships
+    system: Mapped["System"] = relationship(
+        foreign_keys=[system_id],  # Explicitly use system_id, not external_id
+        back_populates="datastreams"
+    )
+    observed_property: Mapped[Optional["ObservedProperty"]] = relationship(back_populates="datastreams")
+    deployment: Mapped[Optional["Deployment"]] = relationship(back_populates="datastreams")
+    procedure: Mapped[Optional["Procedure"]] = relationship(back_populates="datastreams")
+    feature_of_interest: Mapped[Optional["FeatureOfInterest"]] = relationship(back_populates="datastreams")
+    observations: Mapped[List["Observation"]] = relationship(back_populates="datastream", cascade="all, delete-orphan")
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    name = Column(String, nullable=False, comment="Human readable name of the datastream")
-    description = Column(Text, comment="Human readable description of the datastream")
-    system_id = Column(PG_UUID(as_uuid=True), ForeignKey("systems.id"), nullable=False, comment="System generating this datastream")
-    observed_property_id = Column(PG_UUID(as_uuid=True), ForeignKey("observed_properties.id"),  comment="Observed property linked to this datastream")
-    deployment_id = Column(PG_UUID(as_uuid=True), ForeignKey("deployments.id"), comment="Deployment during which this datastream was generated")
-    procedure_id = Column(PG_UUID(as_uuid=True), ForeignKey("procedures.id"), comment="Procedure used for generating observations")
-    feature_of_interest_id = Column(PG_UUID(as_uuid=True), ForeignKey("features_of_interest.id"), comment="Optional feature of interest this datastream observes")
-    external_id = Column(String, ForeignKey("systems.external_id"), index=True, comment="External reference ID (e.g., MQTT topic ID)")
-    is_active = Column(Boolean, nullable=False, default=True, comment="Indicates if the datastream is currently active")
-    is_gps_enabled = Column(Boolean, nullable=False, comment="Indicates if the datastream provides GPS location with observations")
-    observation_result_type = Column(Enum(ValueTypes), nullable=False, comment="Data type of the observation results in this datastream")
-    properties = Column(JSON, comment="Additional metadata or custom properties of the datastream")
+
 
 
 class Observation(AbstractConcreteBase):
     __tablename__ = "observations"
 
-    id = Column(PG_UUID(as_uuid=True), default=uuid.uuid4, index=True, comment="Primary key of the observation")
-    datastream_id = Column(PG_UUID(as_uuid=True), ForeignKey("datastreams.id"), comment="The DataStream that this observation belongs to")
-    result_time = Column(TIMESTAMP(timezone=True), nullable=False, comment="The time the result observation was obtained")
-    # phenomenon_time = Column(TIMESTAMP(timezone=True), comment="The time the phenomenon occurred")
-    result_complex = Column(JSON, comment="Complex result if applicable")
-    result_numeric = Column(Float, comment="Numeric result if applicable")
-    result_text = Column(Text, comment="Text result if applicable")
-    result_boolean = Column(Boolean, comment="Boolean result if applicable") 
-    parameters = Column(JSON, comment="Additional parameters associated with the observation")   
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        default=uuid.uuid4, 
+        index=True, 
+        comment="Primary key of the observation"
+    )
+    datastream_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("datastreams.id"), 
+        comment="The DataStream that this observation belongs to"
+    )
+    result_time: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), 
+        comment="The time the result observation was obtained"
+    )
+
+    result_complex: Mapped[Optional[dict]] = mapped_column(JSON, comment="Complex result if applicable")
+    result_numeric: Mapped[Optional[float]] = mapped_column(Float, comment="Numeric result if applicable")
+    result_text: Mapped[Optional[str]] = mapped_column(Text, comment="Text result if applicable")
+    result_boolean: Mapped[Optional[bool]] = mapped_column(Boolean, comment="Boolean result if applicable")
+    parameters: Mapped[Optional[dict]] = mapped_column(
+        JSON, 
+        comment="Additional parameters associated with the observation"
+    )
+
+    # Relationships
+    datastream: Mapped[Optional["Datastream"]] = relationship(back_populates="observations")
+
 
     __table_args__ = (
         PrimaryKeyConstraint("id", "result_time"),
@@ -230,44 +489,171 @@ class Observation(AbstractConcreteBase):
 class TaskingCapability(AbstractConcreteBase):
     __tablename__ = "tasking_capabilities"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String, nullable=False, comment="Human-readable name of the capability")
-    description = Column(Text, comment="Description of what this tasking capability does")
-    system_id = Column(PG_UUID(as_uuid=True), ForeignKey("systems.id"), comment="System this tasking capability applies to")
-    input_schema = Column(JSON, nullable=False, comment="JSON Schema describing valid input parameters for commands")
-    properties = Column(JSON, comment="Optional metadata for advanced capability configuration")
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        primary_key=True, 
+        default=uuid.uuid4,
+        comment='Internal primary key for the tasking capability'
+    )
+    name: Mapped[str] = mapped_column(String, comment="Human-readable name of the capability")
+    description: Mapped[Optional[str]] = mapped_column(
+        Text, 
+        comment="Description of what this tasking capability does"
+    )
+    system_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("systems.id"), 
+        comment="System this tasking capability applies to"
+    )
+    input_schema: Mapped[dict] = mapped_column(
+        JSON, 
+        comment="JSON Schema describing valid input parameters for commands"
+    )
+    properties: Mapped[Optional[dict]] = mapped_column(
+        JSON, 
+        comment="Optional metadata for advanced capability configuration"
+    )
+
+    # Relationships
+    system: Mapped[Optional["System"]] = relationship(back_populates="tasking_capabilities")
+    control_streams: Mapped[List["ControlStream"]] = relationship(back_populates="tasking_capability")
+
 
 
 class ControlStream(AbstractConcreteBase):
     __tablename__ = "control_streams"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    name = Column(String, nullable=False, comment="Human readable name of the control stream")
-    description = Column(Text, comment="Human readable description of the control stream")
-    system_id = Column(PG_UUID(as_uuid=True), ForeignKey("systems.id"), nullable=False, comment="System receiving commands from this control stream")
-    tasking_capability_id = Column(PG_UUID(as_uuid=True), ForeignKey("tasking_capabilities.id"), comment="Defines allowed command structure for this stream")
-    deployment_id = Column(PG_UUID(as_uuid=True), ForeignKey("deployments.id"), comment="Deployment during which this control stream is used")
-    procedure_id = Column(PG_UUID(as_uuid=True), ForeignKey("procedures.id"), comment="Procedure used to process commands received in the control stream")
-    feature_of_interest_id = Column(PG_UUID(as_uuid=True), ForeignKey("features_of_interest.id"), comment="Optional feature of interest this control stream affects")
-    external_id = Column(String, ForeignKey("systems.external_id"), index=True, comment="External reference ID (e.g., MQTT topic ID)")
-    is_active = Column(Boolean, nullable=False, default=True, comment="Indicates if the control stream is currently active")
-    control_stream_type = Column(Enum(ControlStreamTypes), nullable=False, comment="Data type of the control commands in this stream")
-    properties = Column(JSON, comment="Additional metadata or custom properties of the control stream")
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        primary_key=True, 
+        index=True, 
+        default=uuid.uuid4,
+        comment='Internal primary key for the control stream'
+    )
+    name: Mapped[str] = mapped_column(String, comment="Human readable name of the control stream")
+    description: Mapped[Optional[str]] = mapped_column(
+        Text, 
+        comment="Human readable description of the control stream"
+    )
+    system_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("systems.id"), 
+        comment="System receiving commands from this control stream"
+    )
+    tasking_capability_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("tasking_capabilities.id"), 
+        comment="Defines allowed command structure for this stream"
+    )
+    deployment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("deployments.id"), 
+        comment="Deployment during which this control stream is used"
+    )
+    procedure_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("procedures.id"), 
+        comment="Procedure used to process commands received in the control stream"
+    )
+    feature_of_interest_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey("features_of_interest.id"), 
+        comment="Optional feature of interest this control stream affects"
+    )
+    external_id: Mapped[Optional[str]] = mapped_column(
+        String, 
+        ForeignKey("systems.external_id"), 
+        index=True, 
+        comment="External reference ID (e.g., MQTT topic ID)"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, 
+        default=True, 
+        comment="Indicates if the control stream is currently active"
+    )
+    control_stream_type: Mapped[ControlStreamTypes] = mapped_column(
+        Enum(ControlStreamTypes), 
+        comment="Data type of the control commands in this stream"
+    )
+    properties: Mapped[Optional[dict]] = mapped_column(
+        JSON, 
+        comment="Additional metadata or custom properties of the control stream"
+    )
+
+    # Relationships - FIXED
+    system: Mapped["System"] = relationship(
+        foreign_keys=[system_id],  # Explicitly use system_id
+        back_populates="control_streams"
+    )
+    tasking_capability: Mapped[Optional["TaskingCapability"]] = relationship(
+        back_populates="control_streams"
+    )
+    deployment: Mapped[Optional["Deployment"]] = relationship(
+        back_populates="control_streams"
+    )
+    procedure: Mapped[Optional["Procedure"]] = relationship(
+        back_populates="control_streams"
+    )
+    feature_of_interest: Mapped[Optional["FeatureOfInterest"]] = relationship(
+        back_populates="control_streams"
+    )
+    commands: Mapped[List["Command"]] = relationship(
+        back_populates="control_stream", 
+        cascade="all, delete-orphan"
+    )
+    observations: Mapped[List["ControlStreamObservation"]] = relationship(
+        back_populates="control_stream", 
+        cascade="all, delete-orphan"
+    )
+
 
 
 class Command(AbstractConcreteBase):
+    """Command entity representing individual control commands"""
     __tablename__ = "commands"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    control_stream_id = Column(PG_UUID(as_uuid=True), ForeignKey("control_streams.id"), nullable=False, comment="The control stream to which this command belongs")
-    issue_time = Column(TIMESTAMP(timezone=True), nullable=False, comment="The time the command was issued")
-    parameters = Column(JSON, comment="Parameters associated with the command")
-    # current_status = Column(Enum(StatusCode), nullable=False, comment="Current status of the command")
-    status_message = Column(Text, comment="Additional information about the command status")
-    scheduled_time = Column(TIMESTAMP(timezone=True), comment="Scheduled execution time for the command")
-    execution_time_start = Column(TIMESTAMP(timezone=True), comment="Actual start time of command execution")
-    execution_time_end = Column(TIMESTAMP(timezone=True), comment="Actual end time of command execution")
-    sender = Column(String, comment="Identifier of the user or system that issued the command")
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        index=True,
+        default=uuid.uuid4,
+        comment='Internal primary key for the command'
+    )
+    control_stream_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("control_streams.id", ondelete="CASCADE"),
+        comment="The control stream to which this command belongs"
+    )
+    issue_time: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        comment="The time the command was issued"
+    )
+    parameters: Mapped[Optional[dict]] = mapped_column(JSON, comment="Parameters associated with the command")
+    status_message: Mapped[Optional[str]] = mapped_column(
+        Text,
+        comment="Additional information about the command status"
+    )
+    scheduled_time: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        comment="Scheduled execution time for the command"
+    )
+    execution_time_start: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        comment="Actual start time of command execution"
+    )
+    execution_time_end: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        comment="Actual end time of command execution"
+    )
+    sender: Mapped[Optional[str]] = mapped_column(
+        String,
+        comment="Identifier of the user or system that issued the command"
+    )
+
+    # Relationships
+    control_stream: Mapped["ControlStream"] = relationship(back_populates="commands")
+    statuses: Mapped[List["CommandStatus"]] = relationship(back_populates="command", cascade="all, delete-orphan")
+
 
     __table_args__ = (
         Index("ix_commands_stream_time", "control_stream_id", "issue_time"),
@@ -275,14 +661,37 @@ class Command(AbstractConcreteBase):
 
 
 class CommandStatus(AbstractConcreteBase):
+    """Command status entity tracking the lifecycle of commands"""
     __tablename__ = "command_status"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
-    command_id = Column(PG_UUID(as_uuid=True), ForeignKey("commands.id"), nullable=False, comment="Command this status entry belongs to")
-    status_time = Column(TIMESTAMP(timezone=True), nullable=False, comment="Time at which this status update was reported")
-    status_code = Column(Enum(StatusCode), nullable=False, comment="State of the command (queued, running, completed, failed, etc.)")
-    status_message = Column(Text, comment="Optional human-readable status message")
-    response_result = Column(JSON, comment="Any structured result returned by the system during or after execution")
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        index=True,
+        default=uuid.uuid4,
+        comment='Internal primary key for the command status'
+    )
+    command_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("commands.id", ondelete="CASCADE"),
+        comment="Command this status entry belongs to"
+    )
+    status_time: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        comment="Time at which this status update was reported"
+    )
+    status_code: Mapped[StatusCode] = mapped_column(
+        Enum(StatusCode),
+        comment="State of the command (queued, running, completed, failed, etc.)"
+    )
+    status_message: Mapped[Optional[str]] = mapped_column(Text, comment="Optional human-readable status message")
+    response_result: Mapped[Optional[dict]] = mapped_column(
+        JSON,
+        comment="Any structured result returned by the system during or after execution"
+    )
+
+    # Relationships
+    command: Mapped["Command"] = relationship(back_populates="statuses")
 
     __table_args__ = (
         Index("ix_command_status_time", "command_id", "status_time"),
@@ -290,13 +699,30 @@ class CommandStatus(AbstractConcreteBase):
 
 
 class ControlStreamObservation(AbstractConcreteBase):
+    """Control stream observation entity for monitoring system state"""
     __tablename__ = "control_stream_observations"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    control_stream_id = Column(PG_UUID(as_uuid=True), ForeignKey("control_streams.id"), nullable=False)
-    observation_time = Column(TIMESTAMP(timezone=True), nullable=False, comment="Time the observed state was recorded")
-    state = Column(JSON, nullable=False, comment="Device state: battery, position, status, etc.")
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        comment='Internal primary key for the control stream observation'
+    )
+    control_stream_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("control_streams.id", ondelete="CASCADE")
+    )
+    observation_time: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        comment="Time the observed state was recorded"
+    )
+    state: Mapped[dict] = mapped_column(
+        JSON,
+        comment="Device state: battery, position, status, etc."
+    )
 
+    # Relationships
+    control_stream: Mapped["ControlStream"] = relationship(back_populates="observations")
 
 
 # TimescaleDB hypertable for Observations

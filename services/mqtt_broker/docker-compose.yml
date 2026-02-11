@@ -1,0 +1,18 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: mosquitto
+    networks:
+      - mqtt_network
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./passwd:/etc/mosquitto/passwd:ro
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./data:/mosquitto/data
+      - ./log:/mosquitto/log
+    restart: unless-stopped
+
+networks:
+  mqtt_network:
+    driver: bridge

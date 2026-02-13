@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from app.database import engine, AsyncSessionFactory
+from app.database import engine, AsyncSessionFactory, init_db
 from app import models
 from app.routers import systems
 
@@ -114,6 +114,7 @@ tags_metadata = [
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting up the API...")
+    await init_db()
     yield
     print("Shutting down the API...")
 
@@ -126,7 +127,6 @@ app = FastAPI(
 )
 
 app.include_router(systems.router, prefix="/api/v1/systems", tags=["Systems"])
-
 
 @app.get("/")
 def read_root():

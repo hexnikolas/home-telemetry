@@ -1,6 +1,7 @@
 services/api/app/.env
 services/api/app/__pycache__/
-shared/schemas/__pycache__/__init__.cpython-310.pyc
-shared/schemas/__pycache__/system_schemas.cpython-310.pyc
-services/mqtt_broker/logs/
+shared/schemas/__pycache__/
+services/mqtt_broker/log/
 services/mqtt_broker/passwd
+services/api/app/crud/__pycache__/
+services/api/app/routers/__pycache__/

@@ -4,7 +4,7 @@ from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from uuid import UUID
-from app.crud.crud_system import get_all_systems, get_system, create_system, update_system, delete_system
+from app.crud.system import get_all_systems, get_system, create_system, update_system, delete_system
 
 router = APIRouter()
 

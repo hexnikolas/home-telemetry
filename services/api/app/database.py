@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import AsyncGenerator
+from sqlalchemy import text
 
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
@@ -42,16 +43,21 @@ AsyncSessionFactory = sessionmaker(
     expire_on_commit=False
 )
 
-# Create Base here
 Base = declarative_base()
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionFactory() as session:
         try:
             yield session
-            await session.commit()
         except Exception:
             await session.rollback()
             raise
         finally:
             await session.close()
+
+
+async def init_db() -> None:
+    from app import models  # noqa: F401
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)

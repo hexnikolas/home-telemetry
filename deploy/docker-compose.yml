@@ -11,14 +11,14 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - timescale_data:/var/lib/postgresql/data
+      - /home/nikos/home-telemetry/data/timescaledb:/var/lib/postgresql/data
       - ./timescaledb/initdb:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U home_telemetry -d postgres"]
       interval: 5s
       timeout: 3s
       retries: 20
-      
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: home-telemetry-pgadmin
@@ -33,8 +33,5 @@ services:
       timescaledb:
         condition: service_healthy
     volumes:
-      - pgadmin_data:/var/lib/pgadmin
+      - /home/nikos/home-telemetry/data/pgadmin:/var/lib/pgadmin
 
-volumes:
-  timescale_data:
-  pgadmin_data:

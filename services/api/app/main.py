@@ -2,13 +2,13 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.database import engine, AsyncSessionFactory, init_db
 from app import models
-from app.routers import systems
+from app.routers import systems, deployments
 
 #models.Base.metadata.create_all(bind=engine)
 
 api_description = """
-This API provides a standards-based framework for managing **observational data and metadata**.  
-It is inspired by the OGC SensorThings / O&M model and enables you to describe systems, deployments, procedures, 
+This API provides a standards-based framework for managing **observational data and metadata**.
+It is inspired by the OGC SensorThings / O&M model and enables you to describe systems, deployments, procedures,
 features of interest, observed properties, datastreams, and their resulting observations in a consistent way.
 
 ### Core Concepts
@@ -22,13 +22,13 @@ features of interest, observed properties, datastreams, and their resulting obse
 
 ### Purpose
 
-This API is designed to:  
-- Provide a **structured way to manage metadata** about sensors, systems, deployments, and procedures.  
-- Enable linking of observations to their **procedural, spatial, and semantic context**.  
-- Facilitate **integration, interoperability, and discovery** of observational data in environmental, 
-  scientific, and IoT domains.  
+This API is designed to:
+- Provide a **structured way to manage metadata** about sensors, systems, deployments, and procedures.
+- Enable linking of observations to their **procedural, spatial, and semantic context**.
+- Facilitate **integration, interoperability, and discovery** of observational data in environmental,
+  scientific, and IoT domains.
 
-Together, these resources form a complete chain from **system → deployment → datastream → observation**, 
+Together, these resources form a complete chain from **system → deployment → datastream → observation**,
 allowing rich description, querying, and management of both **metadata** and **measurements**.
 """
 
@@ -41,7 +41,7 @@ tags_metadata = [
             "Systems can be standalone or composed of subsystems."
         ),
     },
-    {        
+    {
         "name": "Deployments",
         "description": (
             "Endpoints for managing **Deployments**, which describe when, where, and how "
@@ -66,7 +66,7 @@ tags_metadata = [
             "object, or event features."
         ),
     },
-    {        
+    {
         "name": "ObservedProperties",
         "description": (
             "Endpoints for managing **Observed Properties**, which define the measurable phenomena "
@@ -127,6 +127,7 @@ app = FastAPI(
 )
 
 app.include_router(systems.router, prefix="/api/v1/systems", tags=["Systems"])
+app.include_router(deployments.router, prefix="/api/v1/deployments", tags=["Deployments"])
 
 @app.get("/")
 def read_root():

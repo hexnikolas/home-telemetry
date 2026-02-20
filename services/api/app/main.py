@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.database import engine, AsyncSessionFactory, init_db
 from app import models
-from app.routers import systems, deployments
+from app.routers import systems, deployments, procedures
 
 #models.Base.metadata.create_all(bind=engine)
 
@@ -128,6 +128,7 @@ app = FastAPI(
 
 app.include_router(systems.router, prefix="/api/v1/systems", tags=["Systems"])
 app.include_router(deployments.router, prefix="/api/v1/deployments", tags=["Deployments"])
+app.include_router(procedures.router, prefix="/api/v1/procedures", tags=["Procedures"])
 
 @app.get("/")
 def read_root():

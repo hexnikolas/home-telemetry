@@ -25,6 +25,14 @@ packages = [
 
 [tool.poetry.dependencies]
 shared = {develop = true}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0.2"
+pytest-asyncio = "^1.3.0"
+aiosqlite = "^0.22.1"
+httpx = "^0.28.1"
+testcontainers = "^4.14.1"
+
 [build-system]
 requires = ["poetry-core>=2.0.0"]
 build-backend = "poetry.core.masonry.api"

@@ -40,7 +40,7 @@ async def create_system(db: AsyncSession, system_in) -> System:
     media_links = [str(url) for url in system_in.media_links] if system_in.media_links else None
 
     """Create a new system in the database."""
-    new_system = System(**system_in.dict(exclude={'media_links'}), media_links=media_links)
+    new_system = System(**system_in.model_dump(exclude={'media_links'}), media_links=media_links)
     try:
         db.add(new_system)
         await db.commit()

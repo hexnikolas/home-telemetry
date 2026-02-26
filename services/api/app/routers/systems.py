@@ -12,9 +12,8 @@ router = APIRouter()
 async def read_systems(db: AsyncSession = Depends(get_db)):
     
     systems_data = await get_all_systems(db)
-    
-    return [SystemRead(**{k: v for k, v in system.__dict__.items() if not k.startswith("_")}) for system in systems_data]
 
+    return[SystemRead(**system.__dict__) for system in systems_data]
 
 @router.get("/{system_id}", summary="Get System by ID", status_code=status.HTTP_200_OK, response_model=SystemRead)
 async def get_a_system_by_id(
@@ -23,35 +22,25 @@ async def get_a_system_by_id(
 ):
     db_system = await get_system(db, system_id=system_id)
     
-    # Build a clean dictionary of attributes
-    system_data = {k: v for k, v in db_system.__dict__.items() if not k.startswith("_")}
-    
-    return SystemRead(**system_data)
+    return SystemRead(**db_system.__dict__)
 
 
 @router.post("/", summary="Create System", status_code=status.HTTP_201_CREATED, response_model=SystemRead)
 async def create_a_new_system(system_in: SystemRead, db: AsyncSession = Depends(get_db)):
     created_system_db = await create_system(db=db, system_in=system_in)
 
-    # Build a clean dictionary of attributes
-    system_data = {k: v for k, v in created_system_db.__dict__.items() if not k.startswith("_")}
-
-    # Validate and return Pydantic model
-    return SystemRead(**system_data)
+    return SystemRead(**created_system_db.__dict__)
 
 
 @router.put("/{system_id}", summary="Update System", status_code=status.HTTP_200_OK, response_model=SystemRead)
 async def update_a_system(system_id: UUID, system_in: SystemUpdate, db: AsyncSession = Depends(get_db)):
     db_system_to_update = await get_system(db, system_id=system_id)
-    
+
     updated_system_db = await update_system(
         db=db, db_system=db_system_to_update, system_in=system_in
     )
-    
-    system_data = {k: v for k, v in updated_system_db.__dict__.items() if not k.startswith("_")}
 
-    # Validate and return Pydantic model
-    return SystemRead(**system_data)
+    return SystemRead(**updated_system_db.__dict__)
 
 
 @router.delete("/{system_id}", summary="Delete System", status_code=status.HTTP_204_NO_CONTENT)
@@ -59,7 +48,7 @@ async def delete_a_system(system_id: UUID, db: AsyncSession = Depends(get_db)):
     db_system_to_delete = await get_system(db, system_id=system_id)
     
     await delete_system(db=db, db_system=db_system_to_delete)
-    
+
     return None
 
 

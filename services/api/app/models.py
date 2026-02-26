@@ -163,7 +163,7 @@ class System(AbstractConcreteBase):
         comment='Links to images, documents, or other media related to the system'
     )
     
-        # Relationships - FIXED
+    # Relationships
     subsystems: Mapped[List["Subsystem"]] = relationship(
         foreign_keys="[Subsystem.parent_system_id]",
         back_populates="parent_system",
@@ -180,10 +180,6 @@ class System(AbstractConcreteBase):
     )
     datastreams: Mapped[List["Datastream"]] = relationship(
         foreign_keys="[Datastream.system_id]",  # Specify system_id
-        back_populates="system", 
-        cascade="all, delete-orphan"
-    )
-    tasking_capabilities: Mapped[List["TaskingCapability"]] = relationship(
         back_populates="system", 
         cascade="all, delete-orphan"
     )
@@ -486,39 +482,6 @@ class Observation(AbstractConcreteBase):
     )
 
 
-class TaskingCapability(AbstractConcreteBase):
-    __tablename__ = "tasking_capabilities"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True), 
-        primary_key=True, 
-        default=uuid.uuid4,
-        comment='Internal primary key for the tasking capability'
-    )
-    name: Mapped[str] = mapped_column(String, comment="Human-readable name of the capability")
-    description: Mapped[Optional[str]] = mapped_column(
-        Text, 
-        comment="Description of what this tasking capability does"
-    )
-    system_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), 
-        ForeignKey("systems.id"), 
-        comment="System this tasking capability applies to"
-    )
-    input_schema: Mapped[dict] = mapped_column(
-        JSON, 
-        comment="JSON Schema describing valid input parameters for commands"
-    )
-    properties: Mapped[Optional[dict]] = mapped_column(
-        JSON, 
-        comment="Optional metadata for advanced capability configuration"
-    )
-
-    # Relationships
-    system: Mapped[Optional["System"]] = relationship(back_populates="tasking_capabilities")
-    control_streams: Mapped[List["ControlStream"]] = relationship(back_populates="tasking_capability")
-
-
 
 class ControlStream(AbstractConcreteBase):
     __tablename__ = "control_streams"
@@ -539,11 +502,6 @@ class ControlStream(AbstractConcreteBase):
         PG_UUID(as_uuid=True), 
         ForeignKey("systems.id"), 
         comment="System receiving commands from this control stream"
-    )
-    tasking_capability_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), 
-        ForeignKey("tasking_capabilities.id"), 
-        comment="Defines allowed command structure for this stream"
     )
     deployment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         PG_UUID(as_uuid=True), 
@@ -580,12 +538,9 @@ class ControlStream(AbstractConcreteBase):
         comment="Additional metadata or custom properties of the control stream"
     )
 
-    # Relationships - FIXED
+    # Relationships
     system: Mapped["System"] = relationship(
         foreign_keys=[system_id],  # Explicitly use system_id
-        back_populates="control_streams"
-    )
-    tasking_capability: Mapped[Optional["TaskingCapability"]] = relationship(
         back_populates="control_streams"
     )
     deployment: Mapped[Optional["Deployment"]] = relationship(
@@ -726,8 +681,8 @@ class ControlStreamObservation(AbstractConcreteBase):
 
 
 # TimescaleDB hypertable for Observations
-event.listen(
-    Observation.__table__,
-    'after_create',
-    DDL(f"SELECT create_hypertable('{Observation.__tablename__}', 'result_time', if_not_exists => TRUE, chunk_time_interval => interval '1 day');")
-)
+# event.listen(
+#     Observation.__table__,
+#     'after_create',
+#     DDL(f"SELECT create_hypertable('{Observation.__tablename__}', 'result_time', if_not_exists => TRUE, chunk_time_interval => interval '1 day');")
+# )

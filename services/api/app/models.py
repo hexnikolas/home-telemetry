@@ -77,11 +77,6 @@ class ObservedProperyDomains(enum.Enum):
     SPECIAL_CASES = "SPECIAL_CASES"                  # Miscellaneous or domain-specific properties
 
 
-class ControlStreamTypes(enum.Enum):
-    SELF = "SELF"                                    # Control stream that affect the parent system itself or one of its subsystems
-    EXTERNAL = "EXTERNAL"                            # Control stream that affect external features of interest
-
-
 class AbstractConcreteBase(Base):
     __abstract__ = True
 

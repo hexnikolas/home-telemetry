@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from app.database import engine, AsyncSessionFactory, init_db
+from app.database import init_engine, init_db
 from app import models
-from app.routers import systems, deployments, procedures
+from app.routers import systems, deployments, procedures, features_of_interest
 
 #models.Base.metadata.create_all(bind=engine)
 
@@ -114,6 +114,7 @@ tags_metadata = [
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting up the API...")
+    init_engine()  # creates engine from env vars
     await init_db()
     yield
     print("Shutting down the API...")
@@ -129,6 +130,7 @@ app = FastAPI(
 app.include_router(systems.router, prefix="/api/v1/systems", tags=["Systems"])
 app.include_router(deployments.router, prefix="/api/v1/deployments", tags=["Deployments"])
 app.include_router(procedures.router, prefix="/api/v1/procedures", tags=["Procedures"])
+app.include_router(features_of_interest.router, prefix="/api/v1/features-of-interest", tags=["FeaturesOfInterest"])
 
 @app.get("/")
 def read_root():

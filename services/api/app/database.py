@@ -4,46 +4,48 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import AsyncGenerator
-from sqlalchemy import text
 
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
-# Helper function to require env variables
-def get_env_var(name: str) -> str:
-    value = os.getenv(name)
-    if value is None:
-        raise RuntimeError(f"Environment variable '{name}' must be set in your .env file")
-    return value
-
-# Required environment variables
-database_host = get_env_var('DATABASE_HOST')
-database_port = get_env_var('DATABASE_PORT')
-database_name = get_env_var('DATABASE_NAME')
-database_user = get_env_var('DATABASE_USER')
-database_pass = get_env_var('DATABASE_PASS')
-
-# Use postgresql+asyncpg instead of postgresql
-SQLALCHEMY_DATABASE_URL = (
-    f'postgresql+asyncpg://{database_user}:{database_pass}@{database_host}:{database_port}/{database_name}'
-)
-
-engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL, 
-    future=True,
-    pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
-    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
-    pool_pre_ping=True,
-    pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
-)
-
-AsyncSessionFactory = sessionmaker(
-    bind=engine, 
-    class_=AsyncSession, 
-    expire_on_commit=False
-)
-
 Base = declarative_base()
+
+engine = None
+AsyncSessionFactory = None
+
+
+def init_engine(url: str = None, poolclass=None):
+    global engine, AsyncSessionFactory
+    if engine is not None:
+        return
+
+    if url is None:
+        for name in ['DATABASE_HOST', 'DATABASE_PORT', 'DATABASE_NAME', 'DATABASE_USER', 'DATABASE_PASS']:
+            if os.getenv(name) is None:
+                raise RuntimeError(f"Environment variable '{name}' must be set")
+        host = os.getenv('DATABASE_HOST')
+        port = os.getenv('DATABASE_PORT')
+        db_name = os.getenv('DATABASE_NAME')
+        user = os.getenv('DATABASE_USER')
+        pwd = os.getenv('DATABASE_PASS')
+        url = f'postgresql+asyncpg://{user}:{pwd}@{host}:{port}/{db_name}'
+
+    kwargs = dict(future=True, pool_pre_ping=True)
+
+    if poolclass is not None:
+        kwargs['poolclass'] = poolclass
+    else:
+        kwargs['pool_size'] = int(os.getenv("DB_POOL_SIZE", "10"))
+        kwargs['max_overflow'] = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+        kwargs['pool_recycle'] = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+
+    engine = create_async_engine(url, **kwargs)
+    AsyncSessionFactory = sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionFactory() as session:
@@ -58,6 +60,5 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     from app import models  # noqa: F401
-
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

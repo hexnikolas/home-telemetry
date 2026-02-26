@@ -82,32 +82,6 @@ class ControlStreamTypes(enum.Enum):
     EXTERNAL = "EXTERNAL"                            # Control stream that affect external features of interest
 
 
-class StatusCode(enum.Enum):
-    PENDING = "PENDING"                              # The command is pending, meaning it has been received by the system but no decision to accept or reject it has been made.
-    ACCEPTED = "ACCEPTED"                            # The command was accepted by the receiving system. This usually means that the command has passed the first validation steps, but it can still be rejected or fail later during execution.
-    REJECTED = "REJECTED"                            # The command was rejected by the receiving system. It won't be executed at all and the message property provides the reason for the rejection. This is a final state. No further status updates will be sent.
-    SCHEDULED = "SCHEDULED"                          # The command was validated and effectively scheduled by the receiving system. When this status code is used, the scheduled execution time must be provided.
-    UPDATED = "UPDATED"                              # An update to the command was received and accepted. This code must be used if the system supports task updates.
-    CANCELED = "CANCELED"                            # The command was canceled by an authorized user. This code must be used if the system supports user-driven task cancellations. The REJECTED state should be used instead if the command was canceled by the receiving system. This is a final state. No further status updates will be sent.
-    EXECUTING = "EXECUTING"                          # The command is currently being executed by the receiving system. The status message can provide more information about the current progress. A system can send several status updates with this code but different time stamps to report progress incrementally. In particular, the progress percentage and the end of the (estimated) execution time period can be refined in each update.
-    COMPLETED = "COMPLETED"                          # The command has completed after a successful execution. The actual execution time must be provided. This is a final state. No further status updates will be sent.
-    FAILED = "FAILED"                                # The command has failed during execution. The error and/or status message provides the reason for failure. This is a final state. No further status updates will be sent.
-
-
-class ResponseStatus(enum.Enum):
-    STATUS_UNSPECIFIED = "STATUS_UNSPECIFIED"        # Default undefined status. Should not be used explicitly in normal cases.
-    OK = "OK"                                        # The request was successfully processed without errors.
-    ERROR = "ERROR"                                  # A generic error occurred while processing the request.
-    NOT_FOUND = "NOT_FOUND"                          # The requested resource could not be found.
-    NOT_IMPLEMENTED = "NOT_IMPLEMENTED"              # The requested functionality is not supported or not implemented.
-    INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"  # The server encountered an unexpected condition that prevented it from fulfilling the request.
-    UNAUTHORIZED = "UNAUTHORIZED"                    # The request is missing valid authentication credentials.
-    INVALID_PARAMETERS = "INVALID_PARAMETERS"        # One or more input parameters are invalid or missing.
-    RATE_LIMITED = "RATE_LIMITED"                    # The request was rejected due to exceeding rate limits or quotas.
-    SUCCESS_WITH_WARNINGS = "SUCCESS_WITH_WARNINGS"  # The operation succeeded, but some non-fatal issues or warnings were encountered.
-    TIMEOUT = "TIMEOUT"                              # The operation timed out before completion.
-
-
 class AbstractConcreteBase(Base):
     __abstract__ = True
 
@@ -183,11 +157,6 @@ class System(AbstractConcreteBase):
         back_populates="system", 
         cascade="all, delete-orphan"
     )
-    control_streams: Mapped[List["ControlStream"]] = relationship(
-        foreign_keys="[ControlStream.system_id]",  # Specify system_id
-        back_populates="system", 
-        cascade="all, delete-orphan"
-    )
 
 
 class Subsystem(AbstractConcreteBase):
@@ -251,7 +220,6 @@ class Deployment(AbstractConcreteBase):
     # Relationships
     system: Mapped[Optional["System"]] = relationship(back_populates="deployments")
     datastreams: Mapped[List["Datastream"]] = relationship(back_populates="deployment")
-    control_streams: Mapped[List["ControlStream"]] = relationship(back_populates="deployment")
 
 
 
@@ -284,7 +252,6 @@ class Procedure(AbstractConcreteBase):
 
     # Relationships
     datastreams: Mapped[List["Datastream"]] = relationship(back_populates="procedure")
-    control_streams: Mapped[List["ControlStream"]] = relationship(back_populates="procedure")
 
 
 
@@ -321,7 +288,6 @@ class FeatureOfInterest(AbstractConcreteBase):
 
     # Relationships
     datastreams: Mapped[List["Datastream"]] = relationship(back_populates="feature_of_interest")
-    control_streams: Mapped[List["ControlStream"]] = relationship(back_populates="feature_of_interest")
 
 
 class ObservedProperty(AbstractConcreteBase):
@@ -483,201 +449,9 @@ class Observation(AbstractConcreteBase):
 
 
 
-class ControlStream(AbstractConcreteBase):
-    __tablename__ = "control_streams"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True), 
-        primary_key=True, 
-        index=True, 
-        default=uuid.uuid4,
-        comment='Internal primary key for the control stream'
-    )
-    name: Mapped[str] = mapped_column(String, comment="Human readable name of the control stream")
-    description: Mapped[Optional[str]] = mapped_column(
-        Text, 
-        comment="Human readable description of the control stream"
-    )
-    system_id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True), 
-        ForeignKey("systems.id"), 
-        comment="System receiving commands from this control stream"
-    )
-    deployment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), 
-        ForeignKey("deployments.id"), 
-        comment="Deployment during which this control stream is used"
-    )
-    procedure_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), 
-        ForeignKey("procedures.id"), 
-        comment="Procedure used to process commands received in the control stream"
-    )
-    feature_of_interest_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), 
-        ForeignKey("features_of_interest.id"), 
-        comment="Optional feature of interest this control stream affects"
-    )
-    external_id: Mapped[Optional[str]] = mapped_column(
-        String, 
-        ForeignKey("systems.external_id"), 
-        index=True, 
-        comment="External reference ID (e.g., MQTT topic ID)"
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, 
-        default=True, 
-        comment="Indicates if the control stream is currently active"
-    )
-    control_stream_type: Mapped[ControlStreamTypes] = mapped_column(
-        Enum(ControlStreamTypes), 
-        comment="Data type of the control commands in this stream"
-    )
-    properties: Mapped[Optional[dict]] = mapped_column(
-        JSON, 
-        comment="Additional metadata or custom properties of the control stream"
-    )
-
-    # Relationships
-    system: Mapped["System"] = relationship(
-        foreign_keys=[system_id],  # Explicitly use system_id
-        back_populates="control_streams"
-    )
-    deployment: Mapped[Optional["Deployment"]] = relationship(
-        back_populates="control_streams"
-    )
-    procedure: Mapped[Optional["Procedure"]] = relationship(
-        back_populates="control_streams"
-    )
-    feature_of_interest: Mapped[Optional["FeatureOfInterest"]] = relationship(
-        back_populates="control_streams"
-    )
-    commands: Mapped[List["Command"]] = relationship(
-        back_populates="control_stream", 
-        cascade="all, delete-orphan"
-    )
-    observations: Mapped[List["ControlStreamObservation"]] = relationship(
-        back_populates="control_stream", 
-        cascade="all, delete-orphan"
-    )
 
 
 
-class Command(AbstractConcreteBase):
-    """Command entity representing individual control commands"""
-    __tablename__ = "commands"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        index=True,
-        default=uuid.uuid4,
-        comment='Internal primary key for the command'
-    )
-    control_stream_id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("control_streams.id", ondelete="CASCADE"),
-        comment="The control stream to which this command belongs"
-    )
-    issue_time: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        comment="The time the command was issued"
-    )
-    parameters: Mapped[Optional[dict]] = mapped_column(JSON, comment="Parameters associated with the command")
-    status_message: Mapped[Optional[str]] = mapped_column(
-        Text,
-        comment="Additional information about the command status"
-    )
-    scheduled_time: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        comment="Scheduled execution time for the command"
-    )
-    execution_time_start: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        comment="Actual start time of command execution"
-    )
-    execution_time_end: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        comment="Actual end time of command execution"
-    )
-    sender: Mapped[Optional[str]] = mapped_column(
-        String,
-        comment="Identifier of the user or system that issued the command"
-    )
-
-    # Relationships
-    control_stream: Mapped["ControlStream"] = relationship(back_populates="commands")
-    statuses: Mapped[List["CommandStatus"]] = relationship(back_populates="command", cascade="all, delete-orphan")
-
-
-    __table_args__ = (
-        Index("ix_commands_stream_time", "control_stream_id", "issue_time"),
-    )
-
-
-class CommandStatus(AbstractConcreteBase):
-    """Command status entity tracking the lifecycle of commands"""
-    __tablename__ = "command_status"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        index=True,
-        default=uuid.uuid4,
-        comment='Internal primary key for the command status'
-    )
-    command_id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("commands.id", ondelete="CASCADE"),
-        comment="Command this status entry belongs to"
-    )
-    status_time: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        comment="Time at which this status update was reported"
-    )
-    status_code: Mapped[StatusCode] = mapped_column(
-        Enum(StatusCode),
-        comment="State of the command (queued, running, completed, failed, etc.)"
-    )
-    status_message: Mapped[Optional[str]] = mapped_column(Text, comment="Optional human-readable status message")
-    response_result: Mapped[Optional[dict]] = mapped_column(
-        JSON,
-        comment="Any structured result returned by the system during or after execution"
-    )
-
-    # Relationships
-    command: Mapped["Command"] = relationship(back_populates="statuses")
-
-    __table_args__ = (
-        Index("ix_command_status_time", "command_id", "status_time"),
-    )
-
-
-class ControlStreamObservation(AbstractConcreteBase):
-    """Control stream observation entity for monitoring system state"""
-    __tablename__ = "control_stream_observations"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        comment='Internal primary key for the control stream observation'
-    )
-    control_stream_id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("control_streams.id", ondelete="CASCADE")
-    )
-    observation_time: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        comment="Time the observed state was recorded"
-    )
-    state: Mapped[dict] = mapped_column(
-        JSON,
-        comment="Device state: battery, position, status, etc."
-    )
-
-    # Relationships
-    control_stream: Mapped["ControlStream"] = relationship(back_populates="observations")
 
 
 # TimescaleDB hypertable for Observations

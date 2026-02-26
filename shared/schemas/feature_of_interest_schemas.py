@@ -26,16 +26,16 @@ class FeatureOfInterestBase(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "name": "Urban Park",
-                "description": "A park located in the city center",
-                "feature_type": "BUILT_ENVIRONMENT",
-                "reference": "City Planning Document 2025",
-                "location": "Downtown, City Center",
+                "name": "Nikos' House",
+                "description": "Measurements of various smart meters inside the house",
+                "feature_type": "ENVIRONMENT",
+                "reference": "https://en.wikipedia.org/wiki/House",
+                "location": "Athens",
                 "properties": {
-                    "area": "5 hectares",
-                    "opening_hours": "6 AM - 10 PM"
+                    "area": "80 square feet",
+                    "num_rooms": 3
                 },
-                "media_links": ["https://example.com/park-image"]
+                "media_links": ["https://example.com/house-image"]
             }
         }
     )

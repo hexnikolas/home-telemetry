@@ -368,17 +368,6 @@ class Datastream(AbstractConcreteBase):
         ForeignKey("features_of_interest.id"), 
         comment="Optional feature of interest this datastream observes"
     )
-    external_id: Mapped[Optional[str]] = mapped_column(
-        String, 
-        ForeignKey("systems.external_id"), 
-        index=True, 
-        comment="External reference ID (e.g., MQTT topic ID)"
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, 
-        default=True, 
-        comment="Indicates if the datastream is currently active"
-    )
     is_gps_enabled: Mapped[bool] = mapped_column(
         Boolean, 
         comment="Indicates if the datastream provides GPS location with observations"

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, UUID4,  HttpUrl, Field
+from pydantic import BaseModel, UUID4,  HttpUrl, Field, ConfigDict
 from typing import Optional, Dict, Any, List
 import enum
 from datetime import datetime
@@ -21,9 +21,8 @@ class DeploymentBase(BaseModel):
     deployment_type: DeploymentTypes = Field(..., description="The type of deployment")
     location: Optional[str] = Field(None, description="Deployment's Location")
     properties: Optional[Dict[str, Any]] = Field(None, description="Arbitrary deployment properties as JSON")
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Tasmota SHT40 sensor deployment",
                 "description": "Tasmota SHT40 test deployment",
@@ -35,6 +34,7 @@ class DeploymentBase(BaseModel):
                 }
             }
         }
+    )
 
 class DeploymentWrite(DeploymentBase):
     pass

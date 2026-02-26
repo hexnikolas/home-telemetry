@@ -1,4 +1,4 @@
-from pydantic import BaseModel, UUID4,  HttpUrl, Field
+from pydantic import BaseModel, UUID4,  HttpUrl, Field, ConfigDict
 from typing import Optional, Dict, Any, List
 from enum import Enum
 from datetime import datetime
@@ -30,8 +30,8 @@ class SystemWrite(SystemBase):
 class SystemRead(SystemWrite):
     subsystems: Optional[List["SystemRead"]] = []
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Temperature Sensor",
                 "description": "A sensor for measuring temperature",
@@ -46,11 +46,12 @@ class SystemRead(SystemWrite):
                 "media_links": ["https://example.com/sensor-image"]
             }
         }
+    )
 
 class SystemUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    system_type: Optional[str] = None
+    system_type: Optional[SystemTypes] = None
     external_id: Optional[str] = None
     is_mobile: Optional[bool] = None
     is_gps_enabled: Optional[bool] = None

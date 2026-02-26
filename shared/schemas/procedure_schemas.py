@@ -1,4 +1,4 @@
-from pydantic import BaseModel, UUID4,  HttpUrl, Field
+from pydantic import BaseModel, UUID4,  HttpUrl, Field, ConfigDict
 from typing import Optional, Dict, Any, List
 import enum
 from datetime import datetime
@@ -23,9 +23,8 @@ class ProcedureBase(BaseModel):
     reference: Optional[str] = Field(None, description="Reference URL or identifier for the procedure")
     steps: Optional[List[str]] = Field(None, description="Steps invovled in the procedure")
     properties: Optional[Dict[str, Any]] = Field(None, description="Arbitrary procedure properties as JSON")
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Tasmota SHT40 sensor procedure",
                 "description": "Tasmota SHT40 test procedure",
@@ -41,6 +40,7 @@ class ProcedureBase(BaseModel):
                 }
             }
         }
+    )
 
 class ProcedureWrite(ProcedureBase):
     pass

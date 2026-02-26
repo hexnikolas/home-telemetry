@@ -1,8 +1,16 @@
 from pydantic import BaseModel, UUID4, Field, ConfigDict
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from enum import Enum
-from uuid import UUID
 from schemas.observed_property_schemas import ObservedPropertyRead
+
+
+class ValueTypes(str, Enum):
+    BOOLEAN = "BOOLEAN"
+    INTEGER = "INTEGER"
+    FLOAT = "FLOAT"
+    STRING = "STRING"
+    JSON = "JSON"
+
 
 class DatastreamBase(BaseModel):
     name: str = Field(..., description="Human readable name of the datastream")
@@ -13,15 +21,15 @@ class DatastreamBase(BaseModel):
     procedure_id: Optional[UUID4] = Field(None, description="Procedure used for generating observations")
     feature_of_interest_id: Optional[UUID4] = Field(None, description="Optional feature of interest this datastream observes")
     is_gps_enabled: bool = Field(..., description="Indicates if the datastream provides GPS location with observations")
-    observation_result_type: str = Field(..., description="Data type of the observation results in this datastream")
+    observation_result_type: ValueTypes = Field(..., description="Data type of the observation results in this datastream")
     properties: Optional[Dict[str, Any]] = Field(None, description="Additional metadata or custom properties of the datastream")
+
 
 class DatastreamWrite(DatastreamBase):
     id: Optional[UUID4] = Field(None, description="Unique identifier for the datastream")
 
-class DatastreamRead(DatastreamWrite):
-    observed_property: Optional[ObservedPropertyRead] = None
 
+class DatastreamRead(DatastreamWrite):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -39,6 +47,7 @@ class DatastreamRead(DatastreamWrite):
         }
     )
 
+
 class DatastreamUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
@@ -48,5 +57,5 @@ class DatastreamUpdate(BaseModel):
     procedure_id: Optional[UUID4] = None
     feature_of_interest_id: Optional[UUID4] = None
     is_gps_enabled: Optional[bool] = None
-    observation_result_type: Optional[str] = None
+    observation_result_type: Optional[ValueTypes] = None
     properties: Optional[Dict[str, Any]] = None

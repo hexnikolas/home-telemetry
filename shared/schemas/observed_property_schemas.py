@@ -2,13 +2,13 @@ from pydantic import BaseModel, UUID4, Field, ConfigDict
 from typing import Optional, List
 from enum import Enum
 
+
 class ValueTypes(str, Enum):
     BOOLEAN = "BOOLEAN"
     INTEGER = "INTEGER"
     FLOAT = "FLOAT"
     STRING = "STRING"
     JSON = "JSON"
-
 
 
 class ObservedPropertyDomains(str, Enum):
@@ -26,6 +26,7 @@ class ObservedPropertyDomains(str, Enum):
     HEALTH_AND_BIOMEDICAL = "HEALTH_AND_BIOMEDICAL"
     SPECIAL_CASES = "SPECIAL_CASES"
 
+
 class ObservedPropertyBase(BaseModel):
     name: str = Field(..., description="Human readable name")
     description: Optional[str] = Field(None, description="Human readable description")
@@ -37,8 +38,10 @@ class ObservedPropertyBase(BaseModel):
     keywords: Optional[List[str]] = Field(None, description="Synonyms or related search terms")
     value_type: ValueTypes = Field(..., description="Data type of the observed property value")
 
+
 class ObservedPropertyWrite(ObservedPropertyBase):
     id: Optional[UUID4] = Field(None, description="Unique identifier for the observed property")
+
 
 class ObservedPropertyRead(ObservedPropertyWrite):
     model_config = ConfigDict(
@@ -56,6 +59,7 @@ class ObservedPropertyRead(ObservedPropertyWrite):
             }
         }
     )
+
 
 class ObservedPropertyUpdate(BaseModel):
     name: Optional[str] = None

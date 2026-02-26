@@ -1,10 +1,7 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.database import init_engine, init_db
-from app import models
-from app.routers import systems, deployments, procedures, features_of_interest
-
-#models.Base.metadata.create_all(bind=engine)
+from app.routers import systems, deployments, procedures, features_of_interest, observed_properties
 
 api_description = """
 This API provides a standards-based framework for managing **observational data and metadata**.
@@ -89,22 +86,6 @@ tags_metadata = [
             "Each observation records the result time, optional location, parameters, "
             "and the result value (JSON, numeric, text, or boolean)."
         ),
-    },
-    {
-        "name": "ControlStreams",
-        "description": (
-            "Endpoints for managing **Control Streams**, which define channels for sending commands "
-            "to systems. Control streams link to procedures and features of interest, and can be "
-            "activated or deactivated as needed."
-        ),
-    },
-    {
-        "name": "Commands",
-        "description": (
-            "Endpoints for managing **Commands**, which are instructions sent via control streams "
-            "to systems. Commands include parameters, issue time, scheduled time, execution times, "
-            "status, and sender information."
-        ),
     }
 ]
 
@@ -131,6 +112,7 @@ app.include_router(systems.router, prefix="/api/v1/systems", tags=["Systems"])
 app.include_router(deployments.router, prefix="/api/v1/deployments", tags=["Deployments"])
 app.include_router(procedures.router, prefix="/api/v1/procedures", tags=["Procedures"])
 app.include_router(features_of_interest.router, prefix="/api/v1/features-of-interest", tags=["FeaturesOfInterest"])
+app.include_router(observed_properties.router, prefix="/api/v1/observed-properties", tags=["ObservedProperties"])
 
 @app.get("/")
 def read_root():

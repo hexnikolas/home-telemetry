@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.database import init_engine, init_db
-from app.routers import systems, deployments, procedures, features_of_interest, observed_properties, datastreams
+from app.routers import systems, deployments, procedures, features_of_interest, observed_properties, datastreams, observations
 
 api_description = """
 This API provides a standards-based framework for managing **observational data and metadata**.
@@ -114,6 +114,7 @@ app.include_router(procedures.router, prefix="/api/v1/procedures", tags=["Proced
 app.include_router(features_of_interest.router, prefix="/api/v1/features-of-interest", tags=["FeaturesOfInterest"])
 app.include_router(observed_properties.router, prefix="/api/v1/observed-properties", tags=["ObservedProperties"])
 app.include_router(datastreams.router, prefix="/api/v1/datastreams", tags=["Datastreams"])
+app.include_router(observations.router, prefix="/api/v1/observations", tags=["Observations"])
 
 @app.get("/")
 def read_root():

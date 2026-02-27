@@ -432,15 +432,9 @@ class Observation(AbstractConcreteBase):
     )
 
 
-
-
-
-
-
-
 # TimescaleDB hypertable for Observations
-# event.listen(
-#     Observation.__table__,
-#     'after_create',
-#     DDL(f"SELECT create_hypertable('{Observation.__tablename__}', 'result_time', if_not_exists => TRUE, chunk_time_interval => interval '1 day');")
-# )
+event.listen(
+    Observation.__table__,
+    'after_create',
+    DDL(f"SELECT create_hypertable('{Observation.__tablename__}', 'result_time', if_not_exists => TRUE, chunk_time_interval => interval '1 day');")
+)

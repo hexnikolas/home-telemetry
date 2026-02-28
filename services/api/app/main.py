@@ -97,7 +97,13 @@ async def lifespan(app: FastAPI):
     print("Starting up the API...")
     init_engine()  # creates engine from env vars
     await init_db()
+
+    from app.mqtt.mqtt_client import startup_mqtt, shutdown_mqtt
+    startup_mqtt()
+
     yield
+
+    shutdown_mqtt()
     print("Shutting down the API...")
 
 

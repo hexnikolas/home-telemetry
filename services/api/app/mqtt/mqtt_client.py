@@ -11,10 +11,8 @@ from schemas.observation_schemas import ObservationWrite
 # ==========================
 # CONFIGURATION
 # ==========================
-TOPICS = [
-    "#",
-    "tele/IoTorero_6057F8/SENSOR",
-]
+# Subscribe to all topics that have a registered handler
+TOPICS = list(TOPIC_HANDLERS.keys())
 
 mqtt_username = os.getenv("MQTT_USERNAME")
 mqtt_password = os.getenv("MQTT_PASSWORD")
@@ -24,38 +22,77 @@ if not (mqtt_username and mqtt_password and mqtt_host):
 
 
 # ==========================
-# MESSAGE HANDLER
+# TOPIC HANDLERS
+# ==========================
+async def handle_sensor_sht4x(data: dict):
+    """Handle SHT4X temperature/humidity sensor messages."""
+    # example payload: {"Time":"2026-02-28T17:13:40","SHT4X":{"Temperature":23.3,"Humidity":29.8,"DewPoint":4.6},"TempUnit":"C"}
+    result_time = datetime.fromisoformat(data["Time"]).replace(tzinfo=timezone.utc)
+    print(result_time)
+    temperature = data.get("SHT4X", {}).get("Temperature")
+    humidity = data.get("SHT4X", {}).get("Humidity")
+    dew_point = data.get("SHT4X", {}).get("DewPoint")
+
+    async with AsyncSessionFactory() as db:
+        if temperature is not None:
+            obs = ObservationWrite(
+                datastream_id="388a0b8f-f3ea-4f2b-9f0d-0a27dc44dce3",
+                result_time=result_time,
+                result_numeric=temperature,
+            )
+            result = await create_observation(db=db, observation_in=obs)
+            print(f"[DB] Saved temperature observation: {result.id}")
+
+        if humidity is not None:
+            obs = ObservationWrite(
+                datastream_id="35af36ae-4d57-416c-8354-c05457bcc6cc",
+                result_time=result_time,
+                result_numeric=humidity,
+            )
+            result = await create_observation(db=db, observation_in=obs)
+            print(f"[DB] Saved humidity observation: {result.id}")
+
+        if dew_point is not None:
+            obs = ObservationWrite(
+                datastream_id="5645b49f-32de-45d0-b4f2-5578b822ac86",
+                result_time=result_time,
+                result_numeric=dew_point,
+            )
+            result = await create_observation(db=db, observation_in=obs)
+            print(f"[DB] Saved dew point observation: {result.id}")
+
+
+# Add more handlers here:
+# async def handle_energy_meter(data: dict):
+#     ...
+
+
+# ==========================
+# TOPIC → HANDLER MAPPING
+# ==========================
+TOPIC_HANDLERS = {
+    "tele/IoTorero_6057F8/SENSOR": handle_sensor_sht4x,
+    # "tele/other_device/SENSOR": handle_energy_meter,
+}
+
+
+# ==========================
+# MESSAGE DISPATCHER
 # ==========================
 async def handle_message(message: aiomqtt.Message):
-    """Process a single MQTT message — runs on the event loop, can await directly."""
-    print(f"[MQTT] Topic: {message.topic}")
+    """Dispatch message to the appropriate handler based on topic."""
+    topic = str(message.topic)
+    print(f"[MQTT] Topic: {topic}")
     print(f"[MQTT] Payload: {message.payload.decode()}")
+
+    handler = TOPIC_HANDLERS.get(topic)
+    if handler is None:
+        print(f"[MQTT] No handler registered for topic: {topic}")
+        return
+
     try:
         data = json.loads(message.payload.decode())
-        # example payload:  {"Time":"2026-02-28T17:13:40","SHT4X":{"Temperature":23.3,"Humidity":29.8,"DewPoint":4.6},"TempUnit":"C"}
-        result_time = datetime.fromisoformat(data["Time"]).replace(tzinfo=timezone.utc)
-        temperature = data.get("SHT4X", {}).get("Temperature")
-        humidity = data.get("SHT4X", {}).get("Humidity")
-
-        async with AsyncSessionFactory() as db:
-            if temperature is not None:
-                obs = ObservationWrite(
-                    datastream_id="REPLACE_WITH_TEMPERATURE_DATASTREAM_UUID",
-                    result_time=result_time,
-                    result_numeric=temperature,
-                )
-                result = await create_observation(db=db, observation_in=obs)
-                print(f"[DB] Saved temperature observation: {result.id}")
-
-            if humidity is not None:
-                obs = ObservationWrite(
-                    datastream_id="REPLACE_WITH_HUMIDITY_DATASTREAM_UUID",
-                    result_time=result_time,
-                    result_numeric=humidity,
-                )
-                result = await create_observation(db=db, observation_in=obs)
-                print(f"[DB] Saved humidity observation: {result.id}")
-
+        await handler(data)
     except json.JSONDecodeError:
         print("[MQTT] Failed to decode JSON payload")
     except Exception as e:

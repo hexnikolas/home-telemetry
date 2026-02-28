@@ -49,9 +49,42 @@ async def handle_sensor_sht4x(data: dict):
             print(f"[DB] Saved {len(results)} observations in bulk")
 
 async def handle_sensor_nous_a1t(data: dict):
+    print(f"[MQTT] Received NOUS A1T data: {data}")
     """Handle NOUS A1T consumption messages."""
-    print(data)
+    # example payload: {'Time': '2026-02-28T18:45:57', 'ENERGY': {'TotalStartTime': '2026-02-28T18:05:42', 'Total': 0.073, 'Yesterday': 0.0, 'Today': 0.073, 'Period': 10.2, 'Power': 118.5, 'ApparentPower': 118.5, 'ReactivePower': 0.0, 'Factor': 1.0, 'Voltage': 33, 'Current': 0.525}}
+    result_time = datetime.fromisoformat(data["Time"]).replace(tzinfo=ZoneInfo("Europe/Athens"))
+    # only keep active_power, voltage and energy_total
+    active_power = data.get("ENERGY", {}).get("Power")
+    voltage = data.get("ENERGY", {}).get("Voltage")
+    energy_total = data.get("ENERGY", {}).get("Total")
 
+    observations = []
+
+    if active_power is not None:
+        observations.append(ObservationWrite(
+            datastream_id="34b3d2fb-46cb-40b9-b6b6-4eb0a00900fc",  # replace with actual datastream ID for active power
+            result_time=result_time,
+            result_numeric=active_power,
+        ))
+
+    if voltage is not None:
+        observations.append(ObservationWrite(
+            datastream_id="750834fb-a9b3-40b2-92ad-e7b68f87589d",
+            result_time=result_time,
+            result_numeric=voltage,
+        ))
+
+    if energy_total is not None:
+        observations.append(ObservationWrite(
+            datastream_id="ee1bad83-25de-442a-bfe1-bcf8cf37ff2f",  # replace with actual datastream ID for energy total
+            result_time=result_time,
+            result_numeric=energy_total,
+        ))
+    
+    if observations:
+        async with AsyncSessionFactory() as db:
+            results = await create_observations_bulk(db=db, observations_in=observations)
+            print(f"[DB] Saved {len(results)} observations in bulk")
 
 # ==========================
 # TOPIC → HANDLER MAPPING
@@ -82,7 +115,6 @@ async def handle_message(message: aiomqtt.Message):
     """Dispatch message to the appropriate handler based on topic."""
     topic = str(message.topic)
     print(f"[MQTT] Topic: {topic}")
-    print(f"[MQTT] Payload: {message.payload.decode()}")
 
     handler = TOPIC_HANDLERS.get(topic)
     if handler is None:

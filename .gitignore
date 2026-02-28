@@ -6,3 +6,5 @@ services/mqtt_broker/passwd
 services/api/app/crud/__pycache__/
 services/api/app/routers/__pycache__/
 tests/__pycache__/
+data/
+services/api/app/mqtt/__pycache__/

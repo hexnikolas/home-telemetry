@@ -16,6 +16,7 @@ dependencies = [
     "psycopg2-binary (>=2.9.11,<3.0.0)",
     "shared @ file:///home/nikos/home-telemetry/shared",
     "asyncpg (>=0.31.0,<0.32.0)",
+    "paho-mqtt (>=2.1.0,<3.0.0)",
 ]
 
 [tool.poetry]

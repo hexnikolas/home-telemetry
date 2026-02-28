@@ -2,9 +2,10 @@ import aiomqtt
 import asyncio
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from app.database import AsyncSessionFactory
-from app.crud.observation import create_observation
+from app.crud.observation import create_observations_bulk, create_observation
 from schemas.observation_schemas import ObservationWrite
 
 
@@ -14,39 +15,42 @@ from schemas.observation_schemas import ObservationWrite
 async def handle_sensor_sht4x(data: dict):
     """Handle SHT4X temperature/humidity sensor messages."""
     # example payload: {"Time":"2026-02-28T17:13:40","SHT4X":{"Temperature":23.3,"Humidity":29.8,"DewPoint":4.6},"TempUnit":"C"}
-    result_time = datetime.fromisoformat(data["Time"]).replace(tzinfo=timezone.utc)
-    print(result_time)
+    result_time = datetime.fromisoformat(data["Time"]).replace(tzinfo=ZoneInfo("Europe/Athens"))
     temperature = data.get("SHT4X", {}).get("Temperature")
     humidity = data.get("SHT4X", {}).get("Humidity")
     dew_point = data.get("SHT4X", {}).get("DewPoint")
 
-    async with AsyncSessionFactory() as db:
-        if temperature is not None:
-            obs = ObservationWrite(
-                datastream_id="388a0b8f-f3ea-4f2b-9f0d-0a27dc44dce3",
-                result_time=result_time,
-                result_numeric=temperature,
-            )
-            result = await create_observation(db=db, observation_in=obs)
-            print(f"[DB] Saved temperature observation: {result.id}")
+    observations = []
 
-        if humidity is not None:
-            obs = ObservationWrite(
-                datastream_id="35af36ae-4d57-416c-8354-c05457bcc6cc",
-                result_time=result_time,
-                result_numeric=humidity,
-            )
-            result = await create_observation(db=db, observation_in=obs)
-            print(f"[DB] Saved humidity observation: {result.id}")
+    if temperature is not None:
+        observations.append(ObservationWrite(
+            datastream_id="388a0b8f-f3ea-4f2b-9f0d-0a27dc44dce3",
+            result_time=result_time,
+            result_numeric=temperature,
+        ))
 
-        if dew_point is not None:
-            obs = ObservationWrite(
-                datastream_id="5645b49f-32de-45d0-b4f2-5578b822ac86",
-                result_time=result_time,
-                result_numeric=dew_point,
-            )
-            result = await create_observation(db=db, observation_in=obs)
-            print(f"[DB] Saved dew point observation: {result.id}")
+    if humidity is not None:
+        observations.append(ObservationWrite(
+            datastream_id="35af36ae-4d57-416c-8354-c05457bcc6cc",
+            result_time=result_time,
+            result_numeric=humidity,
+        ))
+
+    if dew_point is not None:
+        observations.append(ObservationWrite(
+            datastream_id="5645b49f-32de-45d0-b4f2-5578b822ac86",
+            result_time=result_time,
+            result_numeric=dew_point,
+        ))
+
+    if observations:
+        async with AsyncSessionFactory() as db:
+            results = await create_observations_bulk(db=db, observations_in=observations)
+            print(f"[DB] Saved {len(results)} observations in bulk")
+
+async def handle_sensor_nous_a1t(data: dict):
+    """Handle NOUS A1T consumption messages."""
+    print(data)
 
 
 # ==========================
@@ -54,6 +58,7 @@ async def handle_sensor_sht4x(data: dict):
 # ==========================
 TOPIC_HANDLERS = {
     "tele/IoTorero_6057F8/SENSOR": handle_sensor_sht4x,
+    "tele/NOUS_A1T_4E4984/SENSOR": handle_sensor_nous_a1t,
     # "tele/other_device/SENSOR": handle_energy_meter,
 }
 

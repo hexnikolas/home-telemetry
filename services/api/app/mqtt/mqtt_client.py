@@ -22,6 +22,7 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     print(f"[MQTT] Received message from topic: {msg.topic}")
+    print(f"[MQTT] Payload: {msg.payload.decode()}")
 
 def on_disconnect(client, userdata, rc):
     print("[MQTT] Disconnected")

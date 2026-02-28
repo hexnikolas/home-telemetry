@@ -9,11 +9,19 @@ from schemas.observation_schemas import ObservationWrite
 
 
 # ==========================
-# CONFIGURATION
+# TOPIC → HANDLER MAPPING
 # ==========================
+TOPIC_HANDLERS = {
+    "tele/IoTorero_6057F8/SENSOR": handle_sensor_sht4x,
+    # "tele/other_device/SENSOR": handle_energy_meter,
+}
+
 # Subscribe to all topics that have a registered handler
 TOPICS = list(TOPIC_HANDLERS.keys())
 
+# ==========================
+# CONFIGURATION
+# ==========================
 mqtt_username = os.getenv("MQTT_USERNAME")
 mqtt_password = os.getenv("MQTT_PASSWORD")
 mqtt_host = os.getenv("MQTT_HOST")
@@ -60,20 +68,6 @@ async def handle_sensor_sht4x(data: dict):
             )
             result = await create_observation(db=db, observation_in=obs)
             print(f"[DB] Saved dew point observation: {result.id}")
-
-
-# Add more handlers here:
-# async def handle_energy_meter(data: dict):
-#     ...
-
-
-# ==========================
-# TOPIC → HANDLER MAPPING
-# ==========================
-TOPIC_HANDLERS = {
-    "tele/IoTorero_6057F8/SENSOR": handle_sensor_sht4x,
-    # "tele/other_device/SENSOR": handle_energy_meter,
-}
 
 
 # ==========================

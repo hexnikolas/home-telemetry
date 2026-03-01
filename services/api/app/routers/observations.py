@@ -17,10 +17,14 @@ from app.crud.observation import (
 router = APIRouter()
 
 
-@router.get("/", response_model=List[ObservationRead], summary="List Observations", description="List all observations")
-async def read_observations(db: AsyncSession = Depends(get_db)):
-    observations_data = await get_all_observations(db)
 
+@router.get("/", response_model=List[ObservationRead], summary="List Observations", description="List all observations")
+async def read_observations(
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    observations_data = await get_all_observations(db, limit=limit, offset=offset)
     return [ObservationRead(**obs.__dict__) for obs in observations_data]
 
 

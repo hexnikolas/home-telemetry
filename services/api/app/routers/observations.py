@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query, status, Request
 from schemas.observation_schemas import ObservationRead, ObservationUpdate
 from app.database import get_db
+from app.filters import parse_time_param
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from uuid import UUID
@@ -27,9 +28,11 @@ async def read_observations(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     datastream_id: Optional[UUID] = Query(None, description="Filter observations by datastream ID"),
+    time: Optional[str] = Query(None, description="Filter by time. Use 'timestamp' or 'timestamp1/timestamp2'. Timestamps can be ISO format (2026-02-28T17:01:05) or 'now'."),
 ):
     filters = {"datastream_id": datastream_id}
-    observations_data = await get_all_observations(db, limit=limit, offset=offset, filters=filters)
+    time_start, time_end = parse_time_param(time) if time else (None, None)
+    observations_data = await get_all_observations(db, limit=limit, offset=offset, filters=filters, time_start=time_start, time_end=time_end)
     return [ObservationRead(**obs.__dict__) for obs in observations_data]
 
 

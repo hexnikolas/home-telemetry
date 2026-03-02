@@ -89,6 +89,7 @@ async def handle_sensor_nous_a1t(data: dict):
 # ==========================
 # TOPIC → HANDLER MAPPING
 # ==========================
+# TODO: get all systems that are sensors and have a valid external id, use the model field to determine the handler function and build the mapping dynamically
 TOPIC_HANDLERS = {
     "tele/IoTorero_6057F8/SENSOR": handle_sensor_sht4x,
     "tele/NOUS_A1T_4E4984/SENSOR": handle_sensor_nous_a1t,

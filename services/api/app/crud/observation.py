@@ -2,9 +2,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.future import select
 from app.models import Observation
+from app.filters import apply_filters
 from fastapi import HTTPException
 from uuid import UUID
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
 from schemas.observation_schemas import ObservationUpdate
 
@@ -23,8 +24,11 @@ async def get_observation(db: AsyncSession, observation_id: UUID) -> Observation
     return observation
 
 
-async def get_all_observations(db: AsyncSession, limit: int = 50, offset: int = 0) -> List[Observation]:
-    statement = select(Observation).limit(limit).offset(offset)
+async def get_all_observations(db: AsyncSession, limit: int = 50, offset: int = 0, filters: dict[str, Any] | None = None) -> List[Observation]:
+    statement = select(Observation)
+    if filters:
+        statement = apply_filters(statement, Observation, filters)
+    statement = statement.limit(limit).offset(offset)
     result = await db.execute(statement)
     observations = result.scalars().all()
 

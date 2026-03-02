@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, status, Request
 from schemas.observation_schemas import ObservationRead, ObservationUpdate
 from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 from app.rate_limit import limiter
 
@@ -25,9 +25,11 @@ async def read_observations(
     request: Request,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    datastream_id: Optional[UUID] = Query(None, description="Filter observations by datastream ID"),
 ):
-    observations_data = await get_all_observations(db, limit=limit, offset=offset)
+    filters = {"datastream_id": datastream_id}
+    observations_data = await get_all_observations(db, limit=limit, offset=offset, filters=filters)
     return [ObservationRead(**obs.__dict__) for obs in observations_data]
 
 

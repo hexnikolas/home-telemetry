@@ -13,6 +13,8 @@ services:
     volumes:
       - /home/nikos/home-telemetry/data/timescaledb:/var/lib/postgresql/data
       - ./timescaledb/initdb:/docker-entrypoint-initdb.d
+    networks:
+      - home-telemetry
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U home_telemetry -d postgres"]
       interval: 5s
@@ -34,4 +36,10 @@ services:
         condition: service_healthy
     volumes:
       - /home/nikos/home-telemetry/data/pgadmin:/var/lib/pgadmin
+    networks:
+      - home-telemetry
+
+networks:
+  home-telemetry:
+    external: true
 

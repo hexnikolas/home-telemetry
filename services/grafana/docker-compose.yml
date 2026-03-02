@@ -9,8 +9,12 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admin
     volumes:
       - grafana_data:/var/lib/grafana
-    extra_hosts:
-      - "host.docker.internal:host-gateway"  # lets Grafana reach host's localhost
+    networks:
+      - home-telemetry
 
 volumes:
   grafana_data:
+
+networks:
+  home-telemetry:
+    external: true

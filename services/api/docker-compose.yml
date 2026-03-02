@@ -8,3 +8,9 @@ services:
     env_file:
       - app/.env
     restart: unless-stopped
+    networks:
+      - home-telemetry
+
+networks:
+  home-telemetry:
+    external: true

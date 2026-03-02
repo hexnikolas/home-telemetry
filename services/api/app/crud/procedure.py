@@ -22,11 +22,10 @@ async def get_procedure(db: AsyncSession, procedure_id: UUID) -> Procedure:
     return procedure
 
 
-async def get_all_procedures(db: AsyncSession) -> List[Procedure]:
-    """Get all procedures."""
 
-    statement = select(Procedure)
-
+async def get_all_procedures(db: AsyncSession, limit: int = 50, offset: int = 0) -> List[Procedure]:
+    """Get all procedures with pagination."""
+    statement = select(Procedure).limit(limit).offset(offset)
     result = await db.execute(statement)
     procedures = result.scalars().all()
 

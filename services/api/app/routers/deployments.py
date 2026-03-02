@@ -9,11 +9,14 @@ from pydantic import UUID4
 
 router = APIRouter()
 
+
 @router.get("/", response_model=List[DeploymentRead], summary="List Deployments", description="List deployments with optional filtering, pagination, and sorting")
-async def read_deployments(db: AsyncSession = Depends(get_db)):
-
-    deployments_data = await get_all_deployments(db)
-
+async def read_deployments(
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    deployments_data = await get_all_deployments(db, limit=limit, offset=offset)
     return [DeploymentRead(**{k: v for k, v in deployment.__dict__.items() if not k.startswith("_")}) for deployment in deployments_data]
 
 

@@ -21,9 +21,9 @@ async def get_datastream(db: AsyncSession, datastream_id: UUID) -> Datastream:
     return datastream
 
 
-async def get_all_datastreams(db: AsyncSession) -> List[Datastream]:
-    statement = select(Datastream)
 
+async def get_all_datastreams(db: AsyncSession, limit: int = 50, offset: int = 0) -> List[Datastream]:
+    statement = select(Datastream).limit(limit).offset(offset)
     result = await db.execute(statement)
     datastreams = result.scalars().all()
 

@@ -4,16 +4,25 @@ from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from uuid import UUID
-from app.crud.procedure import get_all_procedures, get_procedure, create_procedure, update_procedure, delete_procedure
+from app.crud.procedure import (
+    get_all_procedures, 
+    get_procedure, 
+    create_procedure, 
+    update_procedure, 
+    delete_procedure
+)
 from pydantic import UUID4
 
 router = APIRouter()
 
+
 @router.get("/", response_model=List[ProcedureRead], summary="List Procedures", description="List procedures with optional filtering, pagination, and sorting")
-async def read_procedures(db: AsyncSession = Depends(get_db)):
-
-    procedures_data = await get_all_procedures(db)
-
+async def read_procedures(
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    procedures_data = await get_all_procedures(db, limit=limit, offset=offset)
     return [ProcedureRead(**{k: v for k, v in procedure.__dict__.items() if not k.startswith("_")}) for procedure in procedures_data]
 
 

@@ -22,11 +22,10 @@ async def get_deployment(db: AsyncSession, deployment_id: UUID) -> Deployment:
     return deployment
 
 
-async def get_all_deployments(db: AsyncSession) -> List[Deployment]:
-    """Get all deployments."""
 
-    statement = select(Deployment)
-
+async def get_all_deployments(db: AsyncSession, limit: int = 50, offset: int = 0) -> List[Deployment]:
+    """Get all deployments with pagination."""
+    statement = select(Deployment).limit(limit).offset(offset)
     result = await db.execute(statement)
     deployments = result.scalars().all()
 

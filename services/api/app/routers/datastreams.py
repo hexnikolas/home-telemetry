@@ -1,17 +1,27 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Query
 from schemas.datastream_schemas import DatastreamRead, DatastreamUpdate
 from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from uuid import UUID
-from app.crud.datastream import get_all_datastreams, get_datastream, create_datastream, update_datastream, delete_datastream
+from app.crud.datastream import (
+    get_all_datastreams, 
+    get_datastream, 
+    create_datastream, 
+    update_datastream, 
+    delete_datastream
+)
 
 router = APIRouter()
 
-@router.get("/", response_model=List[DatastreamRead], summary="List Datastreams", description="List datastreams with optional filtering, pagination, and sorting")
-async def read_datastreams(db: AsyncSession = Depends(get_db)):
-    datastreams_data = await get_all_datastreams(db)
 
+@router.get("/", response_model=List[DatastreamRead], summary="List Datastreams", description="List datastreams with optional filtering, pagination, and sorting")
+async def read_datastreams(
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    datastreams_data = await get_all_datastreams(db, limit=limit, offset=offset)
     return [DatastreamRead(**datastream.__dict__) for datastream in datastreams_data]
 
 @router.get("/{datastream_id}", summary="Get Datastream by ID", status_code=status.HTTP_200_OK, response_model=DatastreamRead)

@@ -4,16 +4,25 @@ from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from uuid import UUID
-from app.crud.system import get_all_systems, get_system, create_system, update_system, delete_system
+from app.crud.system import (
+    get_all_systems, 
+    get_system, 
+    create_system, 
+    update_system, 
+    delete_system
+)
 
 router = APIRouter()
 
-@router.get("/", response_model=List[SystemRead], summary="List Systems", description="List systems with optional filtering, pagination, and sorting")
-async def read_systems(db: AsyncSession = Depends(get_db)):
-    
-    systems_data = await get_all_systems(db)
 
-    return[SystemRead(**system.__dict__) for system in systems_data]
+@router.get("/", response_model=List[SystemRead], summary="List Systems", description="List systems with optional filtering, pagination, and sorting")
+async def read_systems(
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    systems_data = await get_all_systems(db, limit=limit, offset=offset)
+    return [SystemRead(**system.__dict__) for system in systems_data]
 
 @router.get("/{system_id}", summary="Get System by ID", status_code=status.HTTP_200_OK, response_model=SystemRead)
 async def get_a_system_by_id(

@@ -12,8 +12,9 @@ from schemas.feature_of_interest_schemas import (
 def handle_media_links(media_links):
     return [str(link) for link in media_links] if media_links else None
 
-async def get_all_features_of_interest(db: AsyncSession):
-    statement = select(FeatureOfInterest)
+
+async def get_all_features_of_interest(db: AsyncSession, limit: int = 50, offset: int = 0):
+    statement = select(FeatureOfInterest).limit(limit).offset(offset)
     result = await db.execute(statement)
     features = result.scalars().all()
 

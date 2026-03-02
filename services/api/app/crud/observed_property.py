@@ -21,9 +21,9 @@ async def get_observed_property(db: AsyncSession, observed_property_id: UUID) ->
     return observed_property
 
 
-async def get_all_observed_properties(db: AsyncSession) -> List[ObservedProperty]:
-    statement = select(ObservedProperty)
 
+async def get_all_observed_properties(db: AsyncSession, limit: int = 50, offset: int = 0) -> List[ObservedProperty]:
+    statement = select(ObservedProperty).limit(limit).offset(offset)
     result = await db.execute(statement)
     observed_properties = result.scalars().all()
 

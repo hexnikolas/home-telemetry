@@ -1,17 +1,27 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Query
 from schemas.observed_property_schemas import ObservedPropertyRead, ObservedPropertyUpdate
 from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from uuid import UUID
-from app.crud.observed_property import get_all_observed_properties, get_observed_property, create_observed_property, update_observed_property, delete_observed_property
+from app.crud.observed_property import (
+    get_all_observed_properties, 
+    get_observed_property, 
+    create_observed_property, 
+    update_observed_property, 
+    delete_observed_property
+)
 
 router = APIRouter()
 
-@router.get("/", response_model=List[ObservedPropertyRead], summary="List Observed Properties", description="List observed properties with optional filtering, pagination, and sorting")
-async def read_observed_properties(db: AsyncSession = Depends(get_db)):
-    observed_properties_data = await get_all_observed_properties(db)
 
+@router.get("/", response_model=List[ObservedPropertyRead], summary="List Observed Properties", description="List observed properties with optional filtering, pagination, and sorting")
+async def read_observed_properties(
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    observed_properties_data = await get_all_observed_properties(db, limit=limit, offset=offset)
     return [ObservedPropertyRead(**observed_property.__dict__) for observed_property in observed_properties_data]
 
 @router.get("/{observed_property_id}", summary="Get Observed Property by ID", status_code=status.HTTP_200_OK, response_model=ObservedPropertyRead)

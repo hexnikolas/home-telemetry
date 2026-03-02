@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from uuid import UUID
@@ -18,9 +18,14 @@ from schemas.feature_of_interest_schemas import (
 
 router = APIRouter()
 
+
 @router.get("/", response_model=List[FeatureOfInterestRead], summary="List Features of Interest")
-async def read_features_of_interest(db: AsyncSession = Depends(get_db)):
-    features = await get_all_features_of_interest(db)
+async def read_features_of_interest(
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    features = await get_all_features_of_interest(db, limit=limit, offset=offset)
     return [FeatureOfInterestRead(**feature.__dict__) for feature in features]
 
 

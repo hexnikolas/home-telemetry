@@ -22,11 +22,10 @@ async def get_system(db: AsyncSession, system_id: UUID) -> System:
     return system
 
 
-async def get_all_systems(db: AsyncSession) -> List[System]:
-    """Get all systems with optional filters and their parent system ID (if any)."""
 
-    statement = select(System)
-
+async def get_all_systems(db: AsyncSession, limit: int = 50, offset: int = 0) -> List[System]:
+    """Get all systems with pagination."""
+    statement = select(System).limit(limit).offset(offset)
     result = await db.execute(statement)
     systems = result.scalars().all()
 

@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status, Request
 from schemas.observation_schemas import ObservationRead, ObservationUpdate
 from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
+from typing import List
 from uuid import UUID
-from datetime import datetime
+from app.rate_limit import limiter
+
 from app.crud.observation import (
     get_all_observations,
     get_observation,
@@ -19,7 +20,9 @@ router = APIRouter()
 
 
 @router.get("/", response_model=List[ObservationRead], summary="List Observations", description="List all observations")
+@limiter.limit("60/minute")
 async def read_observations(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0)
@@ -29,7 +32,9 @@ async def read_observations(
 
 
 @router.get("/{observation_id}", summary="Get Observation by ID", status_code=status.HTTP_200_OK, response_model=ObservationRead)
+@limiter.limit("60/minute")
 async def get_an_observation_by_id(
+    request: Request,
     observation_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):

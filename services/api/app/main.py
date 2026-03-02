@@ -1,7 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from contextlib import asynccontextmanager
 from app.database import init_engine, init_db
 from app.routers import systems, deployments, procedures, features_of_interest, observed_properties, datastreams, observations
+from app.rate_limit import limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
 
 api_description = """
 This API provides a standards-based framework for managing **observational data and metadata**.
@@ -89,7 +92,6 @@ tags_metadata = [
     }
 ]
 
-
 #SEED_FILE = Path(__file__).parent / "observed_properties.json"
 
 @asynccontextmanager
@@ -121,6 +123,9 @@ app.include_router(features_of_interest.router, prefix="/api/v1/features-of-inte
 app.include_router(observed_properties.router, prefix="/api/v1/observed-properties", tags=["ObservedProperties"])
 app.include_router(datastreams.router, prefix="/api/v1/datastreams", tags=["Datastreams"])
 app.include_router(observations.router, prefix="/api/v1/observations", tags=["Observations"])
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.get("/")
 def read_root():

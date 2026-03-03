@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, status, Query, WebSocket, WebSocketDisconnect
 from schemas.datastream_schemas import DatastreamRead, DatastreamUpdate
 from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from app.crud.datastream import (
     update_datastream, 
     delete_datastream
 )
+
 
 router = APIRouter()
 
@@ -59,3 +60,48 @@ async def delete_a_datastream(datastream_id: UUID, db: AsyncSession = Depends(ge
     await delete_datastream(db=db, db_datastream=db_datastream_to_delete)
 
     return None
+
+
+# Redis connection URL (adjust if needed)
+REDIS_URL = "redis://redis:6379/0"
+
+# WebSocket endpoint for datastream updates
+@router.websocket("/ws/datastreams")
+async def websocket_datastreams(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        # Receive a JSON list of datastream UUIDs to subscribe to
+        subscribe_message = await websocket.receive_text()
+        import json
+        datastream_ids = json.loads(subscribe_message)
+        if not isinstance(datastream_ids, list):
+            await websocket.send_text(json.dumps({"error": "Expected a list of datastream UUIDs."}))
+            await websocket.close()
+            return
+
+        import aioredis
+        redis = await aioredis.from_url(REDIS_URL, decode_responses=True)
+        pubsub = redis.pubsub()
+        channels = [f"datastream:{ds_id}" for ds_id in datastream_ids]
+        await pubsub.subscribe(*channels)
+
+        try:
+            while True:
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+                if message:
+                    # Forward the observation to the client
+                    await websocket.send_text(message["data"])
+                # Also check for disconnects
+                try:
+                    await websocket.receive_text()
+                except WebSocketDisconnect:
+                    break
+                except Exception:
+                    pass
+        finally:
+            await pubsub.unsubscribe(*channels)
+            await pubsub.close()
+            await redis.close()
+    except Exception as e:
+        await websocket.send_text(json.dumps({"error": str(e)}))
+        await websocket.close()

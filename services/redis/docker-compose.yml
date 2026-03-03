@@ -8,3 +8,9 @@ services:
     volumes:
       - ./redis.conf:/usr/local/etc/redis/redis.conf
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    networks:
+      - home-telemetry
+
+networks:
+  home-telemetry:
+    external: true

@@ -11,7 +11,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - /home/nikos/home-telemetry/data/timescaledb:/var/lib/postgresql/data
+      - ./data/timescaledb:/var/lib/postgresql/data
       - ./timescaledb/initdb:/docker-entrypoint-initdb.d
     networks:
       - home-telemetry
@@ -35,7 +35,7 @@ services:
       timescaledb:
         condition: service_healthy
     volumes:
-      - /home/nikos/home-telemetry/data/pgadmin:/var/lib/pgadmin
+      - ./data/pgadmin:/var/lib/pgadmin
     networks:
       - home-telemetry
 

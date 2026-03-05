@@ -11,6 +11,8 @@ from app.crud.datastream import (
     update_datastream, 
     delete_datastream
 )
+from app.crud.observation import get_redis_client
+import json
 
 
 router = APIRouter()
@@ -62,46 +64,35 @@ async def delete_a_datastream(datastream_id: UUID, db: AsyncSession = Depends(ge
     return None
 
 
-# Redis connection URL (adjust if needed)
-REDIS_URL = "redis://redis:6379/0"
-
-# WebSocket endpoint for datastream updates
-@router.websocket("/ws/datastreams")
-async def websocket_datastreams(websocket: WebSocket):
+@router.websocket("/ws/{datastream_id}")
+async def websocket_datastream(websocket: WebSocket, datastream_id: UUID):
     await websocket.accept()
+    redis = await get_redis_client()
+    stream_key = f"datastream:{str(datastream_id)}"
+    last_id = "$"  # Start from new messages only
+    
     try:
-        # Receive a JSON list of datastream UUIDs to subscribe to
-        subscribe_message = await websocket.receive_text()
-        import json
-        datastream_ids = json.loads(subscribe_message)
-        if not isinstance(datastream_ids, list):
-            await websocket.send_text(json.dumps({"error": "Expected a list of datastream UUIDs."}))
-            await websocket.close()
-            return
-
-        import aioredis
-        redis = await aioredis.from_url(REDIS_URL, decode_responses=True)
-        pubsub = redis.pubsub()
-        channels = [f"datastream:{ds_id}" for ds_id in datastream_ids]
-        await pubsub.subscribe(*channels)
-
-        try:
-            while True:
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
-                if message:
-                    # Forward the observation to the client
-                    await websocket.send_text(message["data"])
-                # Also check for disconnects
-                try:
-                    await websocket.receive_text()
-                except WebSocketDisconnect:
-                    break
-                except Exception:
-                    pass
-        finally:
-            await pubsub.unsubscribe(*channels)
-            await pubsub.close()
-            await redis.close()
+        while True:
+            # Read from stream with blocking
+            result = await redis.xread({stream_key: last_id}, block=0)
+            
+            if result:
+                for stream, messages in result:
+                    for message_id, data in messages:
+                        last_id = message_id
+                        # Convert message_id and data for JSON serialization
+                        message_id_str = message_id.decode() if isinstance(message_id, bytes) else message_id
+                        await websocket.send_json({
+                            "id": message_id_str,
+                            "data": data
+                        })
+    except WebSocketDisconnect:
+        print(f"WebSocket disconnected for datastream {datastream_id}")
     except Exception as e:
-        await websocket.send_text(json.dumps({"error": str(e)}))
-        await websocket.close()
+        print(f"Error in WebSocket for datastream {datastream_id}: {str(e)}")
+        try:
+            await websocket.close(code=1000)
+        except:
+            pass
+
+

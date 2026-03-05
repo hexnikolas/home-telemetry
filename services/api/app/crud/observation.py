@@ -68,16 +68,25 @@ async def create_observation(db: AsyncSession, observation_in) -> Observation:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    # Publish to Redis (separate from DB transaction)
+    # Add to Redis stream (separate from DB transaction)
     try:
         redis = await get_redis_client()
         channel = f"datastream:{str(new_observation.datastream_id)}"
-        data = json.dumps({"id": str(new_observation.id), "datastream_id": str(new_observation.datastream_id), "result_time": new_observation.result_time.isoformat(), "result_complex": new_observation.result_complex, "result_numeric": new_observation.result_numeric, "result_text": new_observation.result_text, "result_boolean": new_observation.result_boolean, "parameters": new_observation.parameters})
-        print(f"[DEBUG] Publishing to Redis channel: {channel}\nData: {data}")
-        result = await redis.publish(channel, data)
-        print(f"[DEBUG] Redis publish result: {result}")
+        data = {
+            "id": str(new_observation.id),
+            "datastream_id": str(new_observation.datastream_id),
+            "result_time": new_observation.result_time.isoformat(),
+            "result_complex": str(new_observation.result_complex) if new_observation.result_complex is not None else "",
+            "result_numeric": str(new_observation.result_numeric) if new_observation.result_numeric is not None else "",
+            "result_text": new_observation.result_text or "",
+            "result_boolean": str(new_observation.result_boolean) if new_observation.result_boolean is not None else "",
+            "parameters": json.dumps(new_observation.parameters) if new_observation.parameters else "{}"
+        }
+        print(f"[DEBUG] Writing to Redis stream: {channel}\nData: {data}")
+        result = await redis.xadd(channel, data)
+        print(f"[DEBUG] Redis XADD result: {result}")
     except Exception as e:
-        print(f"Warning: Failed to publish observation to Redis: {str(e)}")
+        print(f"Warning: Failed to write observation to Redis: {str(e)}")
         # Don't raise - observation is already created in DB
 
     return new_observation
@@ -97,17 +106,26 @@ async def create_observations_bulk(db: AsyncSession, observations_in: list) -> L
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    # Publish all to Redis (separate from DB transaction)
+    # Add all to Redis stream (separate from DB transaction)
     try:
         redis = await get_redis_client()
         for obs in new_observations:
             channel = f"datastream:{str(obs.datastream_id)}"
-            data = json.dumps({"id": str(obs.id), "datastream_id": str(obs.datastream_id), "result_time": obs.result_time.isoformat(), "result_complex": obs.result_complex, "result_numeric": obs.result_numeric, "result_text": obs.result_text, "result_boolean": obs.result_boolean, "parameters": obs.parameters})
-            print(f"[DEBUG] Publishing to Redis channel: {channel}\nData: {data}")
-            result = await redis.publish(channel, data)
-            print(f"[DEBUG] Redis publish result: {result}")
+            data = {
+                "id": str(obs.id),
+                "datastream_id": str(obs.datastream_id),
+                "result_time": obs.result_time.isoformat(),
+                "result_complex": str(obs.result_complex) if obs.result_complex is not None else "",
+                "result_numeric": str(obs.result_numeric) if obs.result_numeric is not None else "",
+                "result_text": obs.result_text or "",
+                "result_boolean": str(obs.result_boolean) if obs.result_boolean is not None else "",
+                "parameters": json.dumps(obs.parameters) if obs.parameters else "{}"
+            }
+            print(f"[DEBUG] Writing to Redis stream: {channel}\nData: {data}")
+            result = await redis.xadd(channel, data)
+            print(f"[DEBUG] Redis XADD result: {result}")
     except Exception as e:
-        print(f"Warning: Failed to publish observations to Redis: {str(e)}")
+        print(f"Warning: Failed to write observations to Redis: {str(e)}")
         # Don't raise - observations are already created in DB
 
     return new_observations

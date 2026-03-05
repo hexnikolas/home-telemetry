@@ -409,7 +409,7 @@ class Observation(AbstractConcreteBase):
         comment="The DataStream that this observation belongs to"
     )
     result_time: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), 
+        TIMESTAMP(timezone=False), 
         comment="The time the result observation was obtained"
     )
 

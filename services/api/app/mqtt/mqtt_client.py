@@ -2,8 +2,7 @@ import aiomqtt
 import asyncio
 import os
 import json
-from datetime import datetime, UTC
-from zoneinfo import ZoneInfo
+from datetime import datetime, UTC, timezone
 from app.database import AsyncSessionFactory
 from app.crud.observation import create_observations_bulk, create_observation
 from schemas.observation_schemas import ObservationWrite
@@ -15,7 +14,9 @@ from schemas.observation_schemas import ObservationWrite
 async def handle_sensor_sht4x(data: dict):
     """Handle SHT4X temperature/humidity sensor messages."""
     # example payload: {"Time":"2026-02-28T17:13:40","SHT4X":{"Temperature":23.3,"Humidity":29.8,"DewPoint":4.6},"TempUnit":"C"}
-    result_time = datetime.fromisoformat(data["Time"]).replace(tzinfo=UTC).astimezone(ZoneInfo("Europe/Athens")).replace(tzinfo=None)
+    
+
+    result_time = datetime.now(timezone.utc)
     temperature = data.get("SHT4X", {}).get("Temperature")
     humidity = data.get("SHT4X", {}).get("Humidity")
     dew_point = data.get("SHT4X", {}).get("DewPoint")
@@ -52,7 +53,8 @@ async def handle_sensor_nous_a1t(data: dict):
     print(f"[MQTT] Received NOUS A1T data: {data}")
     """Handle NOUS A1T consumption messages."""
     # example payload: {'Time': '2026-02-28T18:45:57', 'ENERGY': {'TotalStartTime': '2026-02-28T18:05:42', 'Total': 0.073, 'Yesterday': 0.0, 'Today': 0.073, 'Period': 10.2, 'Power': 118.5, 'ApparentPower': 118.5, 'ReactivePower': 0.0, 'Factor': 1.0, 'Voltage': 33, 'Current': 0.525}}
-    result_time = datetime.fromisoformat(data["Time"]).replace(tzinfo=UTC).astimezone(ZoneInfo("Europe/Athens")).replace(tzinfo=None)
+
+    result_time = datetime.now(timezone.utc)
     # only keep active_power, voltage and energy_total
     active_power = data.get("ENERGY", {}).get("Power")
     voltage = data.get("ENERGY", {}).get("Voltage")

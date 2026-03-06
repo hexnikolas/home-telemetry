@@ -1,0 +1,18 @@
+services:
+  jobs-worker:
+    build: .
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    command: python -m app.worker
+    deploy:
+      replicas: 1
+    volumes:
+      - ./app:/app/app
+
+  jobs-scheduler:
+    build: .
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    command: python -m app.scheduler
+    volumes:
+      - ./app:/app/app

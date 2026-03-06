@@ -40,15 +40,18 @@ class Job:
         self.error = error
 
     def to_dict(self) -> Dict:
-        return {
+        d = {
             "job_id": self.job_id,
             "job_type": self.job_type,
             "data": json.dumps(self.data),
             "status": self.status.value,
             "created_at": self.created_at.isoformat(),
-            "result": json.dumps(self.result) if self.result else None,
-            "error": self.error,
         }
+        if self.result is not None:
+            d["result"] = json.dumps(self.result)
+        if self.error is not None:
+            d["error"] = self.error
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict) -> "Job":
@@ -128,13 +131,15 @@ class JobQueue:
         while True:
             try:
                 # Get next job from queue
-                job_type, job_id = await self.redis.blpop(
+                result = await self.redis.blpop(
                     list(f"queue:{jtype}" for jtype in self.job_handlers.keys()),
                     timeout=10
                 )
-                
-                if not job_id:
+
+                if not result:
                     continue
+
+                job_type, job_id = result
 
                 job = await self.get_job(job_id)
                 if not job:
@@ -209,7 +214,8 @@ class JobQueue:
         if not self.redis:
             raise RuntimeError("Redis not connected")
 
-        schedule_key = f"schedule:{job_type}:{interval_minutes}"
+        # schedule_key = f"schedule:{job_type}:{interval_minutes}"
+        schedule_key = f"{job_type}:{interval_minutes}"
         next_run = datetime.utcnow() + timedelta(minutes=interval_minutes)
         
         await self.redis.zadd(
@@ -239,9 +245,11 @@ class JobQueue:
                 now = datetime.utcnow().timestamp()
                 
                 # Get all schedules due for execution
-                due_schedules = await self.redis.zrangebyscore("schedules", 0, now)
-                
+                # due_schedules = await self.redis.zrangebyscore("schedules", 0, now)
+                due_schedules = await self.redis.zrangebyscore("schedules", 0, now) or []
+
                 for schedule_key in due_schedules:
+                    print(f"[JOBS] Found due schedule: {schedule_key}")
                     schedule_data = await self.redis.hgetall(f"schedule:{schedule_key}")
                     if schedule_data:
                         job_type = schedule_data["job_type"]
@@ -256,6 +264,9 @@ class JobQueue:
                         await self.redis.zadd("schedules", {schedule_key: next_run.timestamp()})
                         
                         print(f"[JOBS] Executed scheduled job {job_type}, next run in {interval} minutes")
+                    if not schedule_data:
+                        print(f"[JOBS] Missing schedule data for {schedule_key}, skipping")
+                        continue  # 👈 was already there but double-check the key matches exactly
                 
                 await asyncio.sleep(60)  # Check every minute
                 

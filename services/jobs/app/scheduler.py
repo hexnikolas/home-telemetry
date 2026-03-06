@@ -16,7 +16,7 @@ async def setup_schedules():
     await job_queue.schedule_periodic_job(
         job_type="scrape_energy_prices",
         data={"source_url": "https://example.com/prices"},
-        interval_minutes=30
+        interval_minutes=1
     )
     
     # Add more scheduled jobs as needed:

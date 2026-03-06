@@ -14,7 +14,7 @@ async def handle_scrape_energy_prices(data: Dict[str, Any]) -> Dict[str, Any]:
         "system_id": "uuid-of-system"
     }
     """
-    print(f"[JOBS] Starting energy price scrape from {data.get('source_url')}")
+    print(f"[JOBS] Starting energy price scrape from test")
     
     try:
         # TODO: Implement actual scraping logic here
@@ -25,7 +25,7 @@ async def handle_scrape_energy_prices(data: Dict[str, Any]) -> Dict[str, Any]:
         #     prices = parse_prices(response.text)
         
         # Simulated scraping
-        await asyncio.sleep(2)
+        # await asyncio.sleep(2)
         
         result = {
             "scraped_at": "2024-03-06T12:00:00Z",
@@ -33,10 +33,9 @@ async def handle_scrape_energy_prices(data: Dict[str, Any]) -> Dict[str, Any]:
                 {"timestamp": "2024-03-06T12:00:00Z", "price": 45.50},
                 {"timestamp": "2024-03-06T13:00:00Z", "price": 42.30},
             ],
-            "source": data.get('source_url')
         }
         
-        print(f"[JOBS] Scrape completed, found {len(result['prices'])} price points")
+        # print(f"[JOBS] Scrape completed, found {len(result['prices'])} price points")
         return result
         
     except Exception as e:
@@ -83,7 +82,7 @@ async def handle_send_alert(data: Dict[str, Any]) -> Dict[str, Any]:
     print(f"[JOBS] Sending alert: {data.get('message')}")
     
     # TODO: Implement actual alert sending (email, webhook, etc.)
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(1)
     
     return {
         "alert_sent": True,

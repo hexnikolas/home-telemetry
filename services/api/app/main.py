@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from contextlib import asynccontextmanager
 from app.database import init_engine, init_db
-from app.routers import systems, deployments, procedures, features_of_interest, observed_properties, datastreams, observations
+from app.routers import systems, deployments, procedures, features_of_interest, observed_properties, datastreams, observations, admin
 from app.rate_limit import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
@@ -123,6 +123,7 @@ app.include_router(features_of_interest.router, prefix="/api/v1/features-of-inte
 app.include_router(observed_properties.router, prefix="/api/v1/observed-properties", tags=["ObservedProperties"])
 app.include_router(datastreams.router, prefix="/api/v1/datastreams", tags=["Datastreams"])
 app.include_router(observations.router, prefix="/api/v1/observations", tags=["Observations"])
+app.include_router(admin.router, prefix="/api/v1", tags=["Admin"])
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

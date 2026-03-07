@@ -1,10 +1,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.future import select
-from app.models import System
+from app.models import System, SystemTypes
 from fastapi import HTTPException
 from uuid import UUID
-from typing import List
+from typing import List, Optional
 from schemas.system_schemas import SystemUpdate
 
 async def get_system(db: AsyncSession, system_id: UUID) -> System:
@@ -23,9 +23,19 @@ async def get_system(db: AsyncSession, system_id: UUID) -> System:
 
 
 
-async def get_all_systems(db: AsyncSession, limit: int = 50, offset: int = 0) -> List[System]:
-    """Get all systems with pagination."""
-    statement = select(System).limit(limit).offset(offset)
+async def get_all_systems(
+    db: AsyncSession,
+    limit: int = 50,
+    offset: int = 0,
+    system_type: Optional[SystemTypes] = None
+) -> List[System]:
+    """Get all systems with pagination and optional system_type filter."""
+    statement = select(System)
+
+    if system_type is not None:
+        statement = statement.where(System.system_type == system_type)
+
+    statement = statement.limit(limit).offset(offset)
     result = await db.execute(statement)
     systems = result.scalars().all()
 

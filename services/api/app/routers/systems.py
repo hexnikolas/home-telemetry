@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status, Query
 from schemas.system_schemas import SystemRead, SystemUpdate, SystemStatus
 from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 from app.crud.system import (
     get_all_systems, 
@@ -11,6 +11,7 @@ from app.crud.system import (
     update_system, 
     delete_system
 )
+from app.models import SystemTypes
 
 router = APIRouter()
 
@@ -19,9 +20,10 @@ router = APIRouter()
 async def read_systems(
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    system_type: Optional[SystemTypes] = Query(None, description="Filter by system type")
 ):
-    systems_data = await get_all_systems(db, limit=limit, offset=offset)
+    systems_data = await get_all_systems(db, limit=limit, offset=offset, system_type=system_type)
     return [SystemRead(**system.__dict__) for system in systems_data]
 
 @router.get("/{system_id}", summary="Get System by ID", status_code=status.HTTP_200_OK, response_model=SystemRead)

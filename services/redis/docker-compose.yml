@@ -7,9 +7,13 @@ services:
     restart: unless-stopped
     volumes:
       - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - redis_data:/data
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     networks:
       - home-telemetry
+
+volumes:
+  redis_data:
 
 networks:
   home-telemetry:

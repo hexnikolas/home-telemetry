@@ -83,6 +83,15 @@ class JobQueue:
             await self.redis.close()
             print("[JOBS] Redis connection closed")
 
+    async def reconnect(self):
+        """Reconnect to Redis"""
+        try:
+            if self.redis:
+                await self.redis.close()
+        except Exception:
+            pass
+        self.redis = await aioredis.from_url(self.redis_url, decode_responses=True)
+
     def register_handler(self, job_type: str, handler: Callable):
         """Register a handler function for a job type"""
         self.job_handlers[job_type] = handler
@@ -177,7 +186,15 @@ class JobQueue:
                 break
             except Exception as e:
                 print(f"[JOBS] Worker error: {str(e)}")
-                await asyncio.sleep(5)
+                # Attempt reconnect
+                print("[JOBS] Attempting to reconnect to Redis...")
+                await asyncio.sleep(10)
+                try:
+                    await self.reconnect()
+                    print("[JOBS] Reconnected to Redis successfully")
+                except Exception as re:
+                    print(f"[JOBS] Reconnect failed: {str(re)}")
+                    await asyncio.sleep(10)
 
     async def _update_job_status(
         self,
@@ -275,7 +292,14 @@ class JobQueue:
                 break
             except Exception as e:
                 print(f"[JOBS] Scheduler error: {str(e)}")
-                await asyncio.sleep(60)
+                print("[JOBS] Attempting to reconnect to Redis...")
+                await asyncio.sleep(10)
+                try:
+                    await self.reconnect()
+                    print("[JOBS] Scheduler reconnected to Redis successfully")
+                except Exception as re:
+                    print(f"[JOBS] Scheduler reconnect failed: {str(re)}")
+                    await asyncio.sleep(10)
 
 
 # Global job queue instance

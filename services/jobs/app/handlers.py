@@ -3,45 +3,62 @@ Job handlers for background tasks
 """
 from typing import Any, Dict
 import asyncio
+import httpx
+from app.queue import job_queue
 
-# Example: Data scraping job
-async def handle_scrape_energy_prices(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Example scraping job for energy prices.
-    
-    data format: {
-        "source_url": "https://example.com/prices",
-        "system_id": "uuid-of-system"
-    }
-    """
-    print(f"[JOBS] Starting energy price scrape from test")
-    
-    try:
-        # TODO: Implement actual scraping logic here
-        # Example with httpx:
-        # import httpx
-        # async with httpx.AsyncClient() as client:
-        #     response = await client.get(data['source_url'])
-        #     prices = parse_prices(response.text)
-        
-        # Simulated scraping
-        # await asyncio.sleep(2)
-        
-        result = {
-            "scraped_at": "2024-03-06T12:00:00Z",
-            "prices": [
-                {"timestamp": "2024-03-06T12:00:00Z", "price": 45.50},
-                {"timestamp": "2024-03-06T13:00:00Z", "price": 42.30},
-            ],
-        }
-        
-        # print(f"[JOBS] Scrape completed, found {len(result['prices'])} price points")
-        return result
-        
-    except Exception as e:
-        print(f"[JOBS] Scrape failed: {str(e)}")
-        raise
+REDIS_MQTT_TOPICS_KEY = "mqtt:topics"
+BATCH_SIZE = 100
+SYSTEMS_API_URL = "http://localhost:8000/api/v1/systems/"  # adjust to your base URL
 
+async def handle_sync_mqtt_topics_to_redis(data: Dict[str, Any]) -> None:
+    """
+    Fetch all SENSOR systems via HTTP API, extract their external_id,
+    and add them to a Redis Set for the MQTT client to consume.
+    """
+    redis = job_queue.redis
+
+    offset = 0
+    added = 0
+
+    async with httpx.AsyncClient() as client:
+        while True:
+            response = await client.get(
+                SYSTEMS_API_URL,
+                params={
+                    "system_type": "SENSOR",
+                    "limit": BATCH_SIZE,
+                    "offset": offset
+                }
+            )
+
+            if response.status_code == 404:
+                break
+
+            response.raise_for_status()
+            systems = response.json()
+
+            topics_with_models = {
+                s["external_id"]: s["model"]
+                for s in systems
+                if s.get("external_id") and s.get("model")
+            }
+
+            if topics_with_models:
+                current = await redis.hgetall("mqtt:topic_models")
+                stale = set(current.keys()) - set(topics_with_models.keys())
+                if stale:
+                    await redis.hdel("mqtt:topic_models", *stale)
+                await redis.hset("mqtt:topic_models", mapping=topics_with_models)
+                added += len(topics_with_models)
+                print(f"[JOBS] Fetched {len(systems)} systems, adding {len(topics_with_models)} topics to Redis")
+
+            
+            if len(systems) < BATCH_SIZE:
+                break
+
+            offset += BATCH_SIZE
+
+    print(f"[JOBS] MQTT topic sync complete - topics added to Redis")
 
 # Example: Data processing job
 async def handle_process_observations(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -67,25 +84,3 @@ async def handle_process_observations(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-# Example: Notification job
-async def handle_send_alert(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Example job for sending alerts.
-    
-    data format: {
-        "alert_type": "threshold_exceeded",
-        "datastream_id": "uuid",
-        "message": "Temperature exceeded 30°C",
-        "recipients": ["user@example.com"]
-    }
-    """
-    print(f"[JOBS] Sending alert: {data.get('message')}")
-    
-    # TODO: Implement actual alert sending (email, webhook, etc.)
-    await asyncio.sleep(1)
-    
-    return {
-        "alert_sent": True,
-        "recipients": len(data.get('recipients', [])),
-        "message": data.get('message')
-    }

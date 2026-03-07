@@ -11,20 +11,16 @@ from app.queue import job_queue
 
 async def setup_schedules():
     """Set up all recurring schedules here"""
-    
+    # Run immediately on startup
+    await job_queue.enqueue("sync_mqtt_topics_to_redis", {})
+
+
     # Example: Scrape energy prices every 30 minutes
     await job_queue.schedule_periodic_job(
-        job_type="scrape_energy_prices",
-        data={"source_url": "https://example.com/prices"},
-        interval_minutes=1
+        job_type="sync_mqtt_topics_to_redis",
+        data={},  # No additional data needed for this job
+        interval_minutes=5
     )
-    
-    # Add more scheduled jobs as needed:
-    # await job_queue.schedule_periodic_job(
-    #     job_type="process_observations",
-    #     data={"datastream_id": "some-uuid"},
-    #     interval_minutes=60
-    # )
 
 
 async def main():

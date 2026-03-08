@@ -35,7 +35,7 @@ async def get_feature_of_interest(db: AsyncSession, feature_id: UUID):
 async def create_feature_of_interest(db: AsyncSession, feature_in: FeatureOfInterestWrite):
     media_links = handle_media_links(feature_in.media_links)
     new_feature = FeatureOfInterest(
-        **feature_in.dict(exclude={"media_links"}),
+        **feature_in.model_dump(exclude={"media_links"}),
         media_links=media_links
     )
     try:

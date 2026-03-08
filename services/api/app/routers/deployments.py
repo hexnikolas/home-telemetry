@@ -34,8 +34,8 @@ async def get_a_deployment_by_id(
 
 
 @router.post("/", summary="Create Deployment", status_code=status.HTTP_201_CREATED, response_model=DeploymentRead)
-async def create_a_new_deployment(systemId: UUID4, deployment_in: DeploymentWrite, db: AsyncSession = Depends(get_db)):
-    created_deployment_db = await create_deployment(db=db, system_id=systemId, deployment_in=deployment_in)
+async def create_a_new_deployment(system_id: UUID4, deployment_in: DeploymentWrite, db: AsyncSession = Depends(get_db)):
+    created_deployment_db = await create_deployment(db=db, system_id=system_id, deployment_in=deployment_in)
 
     # Build a clean dictionary of attributes
     deployment_data = {k: v for k, v in created_deployment_db.__dict__.items() if not k.startswith("_")}

@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import text
 import os
 from dotenv import load_dotenv
 from pathlib import Path
@@ -62,3 +63,46 @@ async def init_db() -> None:
     from app import models  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await seed_db()
+
+
+async def seed_db() -> None:
+    """Seeds the database with initial data from current_data.sql if tables are empty."""
+    sql_file = Path(__file__).parent / "current_data.sql"
+    if not sql_file.exists():
+        print(f"Seed file {sql_file} not found. Skipping seeding.")
+        return
+
+    # Using the existing engine factory
+    async with AsyncSessionFactory() as session:
+        try:
+            # Check if systems table has any entries
+            # Using text() to avoid circular imports here
+            result = await session.execute(text("SELECT 1 FROM public.systems LIMIT 1;"))
+            if result.fetchone():
+                print("Database already contains data. Skipping seeding.")
+                return
+        except Exception as e:
+            # If table doesn't exist, we can't check. Proceed to seed.
+            print(f"Checking for existing data failed: {e}")
+
+        print(f"Seeding database with initial data from {sql_file}...")
+        try:
+            with open(sql_file, "r") as f:
+                content = f.read()
+
+            # Filter out psql meta-commands and SET statements that might fail and are not needed
+            statements = [s.strip() for s in content.split(';') if s.strip()]
+            for statement in statements:
+                # Basic filter for non-SQL commands
+                if (statement.startswith('\\\\') or 
+                    statement.startswith('SET ') or 
+                    statement.startswith('SELECT pg_catalog')):
+                    continue
+                await session.execute(text(statement + ";"))
+            
+            await session.commit()
+            print("Database seeding completed successfully.")
+        except Exception as e:
+            await session.rollback()
+            print(f"Error during seeding: {e}")

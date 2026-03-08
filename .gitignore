@@ -9,3 +9,4 @@ tests/__pycache__/
 data/
 services/api/app/mqtt/__pycache__/
 services/api/api.log
+poetry.lock

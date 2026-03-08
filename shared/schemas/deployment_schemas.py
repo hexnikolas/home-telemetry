@@ -50,6 +50,6 @@ class DeploymentRead(DeploymentBase):
 class DeploymentUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    deployment_type: Optional[str] = None
+    deployment_type: Optional[DeploymentTypes] = None
     location: Optional[str] = None
     properties: Optional[Dict[str, Any]] = None

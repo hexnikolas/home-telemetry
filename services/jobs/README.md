@@ -1,6 +1,18 @@
 # Background Job Queue Service
 
-Standalone service for processing background jobs from Redis queue with periodic scheduling support.
+Standalone microservice for processing background jobs from a Redis queue with periodic scheduling support.
+
+## Important: Shared Infrastructure
+
+This service **reuses existing infrastructure** from other services:
+
+| Service | Location | Used By |
+|---------|----------|---------|
+| **Redis** | `services/redis/` | API enqueues jobs, Jobs service consumes them |
+| **Database** | `services/db/` | Optional - if handlers need DB access |
+| **MQTT** | `services/mqtt_broker/` | Optional - if handlers need MQTT |
+
+You **do NOT** need separate instances for the jobs service—it communicates with your existing infrastructure via network connections only.
 
 ## Architecture
 
@@ -41,22 +53,19 @@ FastAPI (API Service)           Job Service
 poetry install
 ```
 
-### 2. Start Redis (separate terminal)
-```bash
-redis-server
-```
-
-### 3. Start Worker (process jobs)
+### 2. Start Worker (process jobs)
 ```bash
 poetry run python -m app.worker
 ```
 
-### 4. Start Scheduler (periodic jobs) - optional Terminal
+### 3. Start Scheduler (periodic jobs) - optional Terminal
 ```bash
 poetry run python -m app.scheduler
 ```
 
 ## Running with Docker Compose
+
+**Important:** This assumes you already have Redis, DB, and MQTT running (from `services/redis/`, `services/db/`, etc).
 
 From the `jobs/` directory:
 
@@ -64,30 +73,35 @@ From the `jobs/` directory:
 docker-compose up
 ```
 
-This starts:
-- Redis
+This starts only:
 - Jobs Worker
 - Jobs Scheduler
-- Database (TimescaleDB)
-- MQTT Broker
+
+**Network Configuration:** The jobs services will need to reach your Redis instance. Make sure they're on the same Docker network or use proper host resolution.
+
+To connect to services on the host machine from Docker:
+```yaml
+# In jobs/docker-compose.yml
+jobs-worker:
+  environment:
+    - REDIS_URL=redis://host.docker.internal:6379/0  # macOS/Windows Docker
+    # or
+    - REDIS_URL=redis://<your-host-ip>:6379/0        # Linux
+```
 
 ## Running without Docker (Fastest for Testing)
 
-Ideal for rapid development and testing:
+Ideal for rapid development and testing. **Prerequisites:** Redis running on localhost:6379
 
-**Terminal 1 - Redis:**
-```bash
-redis-server
-```
 
-**Terminal 2 - Worker:**
+**Worker:**
 ```bash
 cd services/jobs
 poetry install
 poetry run python -m app.worker
 ```
 
-**Terminal 3 - Scheduler (optional):**
+**Scheduler (optional):**
 ```bash
 cd services/jobs
 poetry run python -m app.scheduler

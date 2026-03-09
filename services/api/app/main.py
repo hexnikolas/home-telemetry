@@ -6,7 +6,7 @@ from app.rate_limit import limiter
 from app.middlewares import CorrelationIdMiddleware, RequestLoggingMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
-from shared.logging_config import setup_logging_json
+from logger.logging_config import setup_logging_json
 import os
 
 # Initialize structured logging

@@ -14,12 +14,12 @@ dependencies = [
     "pydantic>=2.12.5,<3.0.0",
     "uvicorn[standard] (>=0.40.0,<0.41.0)",
     "psycopg2-binary (>=2.9.11,<3.0.0)",
-    "shared @ file:///home/nikos/home-telemetry/shared",
     "asyncpg (>=0.31.0,<0.32.0)",
     "aiomqtt (>=2.5.0,<3.0.0)",
     "slowapi (>=0.1.9,<0.2.0)",
     "redis (>=7.2.1,<8.0.0)",
     "loguru>=0.7.2,<1.0.0",
+    "shared @ file:///home/nikos/home-telemetry/shared",
 ]
 
 [tool.poetry]

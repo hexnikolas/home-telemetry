@@ -7,7 +7,7 @@ from app.database import AsyncSessionFactory
 from app.crud.observation import create_observations_bulk
 from schemas.observation_schemas import ObservationWrite
 import redis.asyncio as aioredis
-from shared.logging_config import logger
+from logger.logging_config import logger
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 REDIS_TOPIC_MODELS_KEY = "mqtt:topic_models"
@@ -248,4 +248,4 @@ def shutdown_mqtt():
         _mqtt_task.cancel()
         _mqtt_task = None
         logger.info("MQTT listener task cancelled")
-    print("[MQTT] Listener task stopped")
+    logger.info("[MQTT] Listener task stopped")

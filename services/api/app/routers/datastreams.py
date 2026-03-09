@@ -13,6 +13,7 @@ from app.crud.datastream import (
 )
 from app.crud.observation import get_redis_client
 import json
+from logger.logging_config import logger
 
 
 router = APIRouter()
@@ -87,9 +88,9 @@ async def websocket_datastream(websocket: WebSocket, datastream_id: UUID):
                             "data": data
                         })
     except WebSocketDisconnect:
-        print(f"WebSocket disconnected for datastream {datastream_id}")
+        logger.info(f"WebSocket disconnected for datastream {datastream_id}")
     except Exception as e:
-        print(f"Error in WebSocket for datastream {datastream_id}: {str(e)}")
+        logger.error(f"Error in WebSocket for datastream {datastream_id}: {str(e)}")
         try:
             await websocket.close(code=1000)
         except:

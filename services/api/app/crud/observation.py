@@ -8,6 +8,7 @@ from uuid import UUID
 from typing import List, Optional, Any
 from datetime import datetime
 from schemas.observation_schemas import ObservationUpdate
+from logger.logging_config import logger
 
 # Redis
 import json
@@ -82,11 +83,9 @@ async def create_observation(db: AsyncSession, observation_in) -> Observation:
             "result_boolean": str(new_observation.result_boolean) if new_observation.result_boolean is not None else "",
             "parameters": json.dumps(new_observation.parameters) if new_observation.parameters else "{}"
         }
-        print(f"[DEBUG] Writing to Redis stream: {channel}\nData: {data}")
         result = await redis.xadd(channel, data)
-        print(f"[DEBUG] Redis XADD result: {result}")
     except Exception as e:
-        print(f"Warning: Failed to write observation to Redis: {str(e)}")
+        logger.warning(f"Warning: Failed to write observation to Redis: {str(e)}")
         # Don't raise - observation is already created in DB
 
     return new_observation
@@ -121,11 +120,9 @@ async def create_observations_bulk(db: AsyncSession, observations_in: list) -> L
                 "result_boolean": str(obs.result_boolean) if obs.result_boolean is not None else "",
                 "parameters": json.dumps(obs.parameters) if obs.parameters else "{}"
             }
-            print(f"[DEBUG] Writing to Redis stream: {channel}\nData: {data}")
             result = await redis.xadd(channel, data)
-            print(f"[DEBUG] Redis XADD result: {result}")
     except Exception as e:
-        print(f"Warning: Failed to write observations to Redis: {str(e)}")
+        logger.warning(f"Warning: Failed to write observations to Redis: {str(e)}")
         # Don't raise - observations are already created in DB
 
     return new_observations

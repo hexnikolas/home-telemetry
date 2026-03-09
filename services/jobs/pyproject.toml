@@ -13,7 +13,8 @@ dependencies = [
     "loguru>=0.7.2,<1.0.0",
     "shared @ file:///home/nikos/home-telemetry/shared",
 ]
-
+[tool.poetry]
+package-mode = false
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

@@ -13,7 +13,7 @@ import time
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
-from shared.logging_config import set_correlation_id, set_request_id
+from logger.logging_config import set_correlation_id, set_request_id
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
@@ -65,7 +65,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """
     
     async def dispatch(self, request: Request, call_next) -> Response:
-        from shared.logging_config import logger
+        from logger.logging_config import logger
         
         start_time = time.time()
         request_id = request.headers.get("X-Request-ID", "unknown")

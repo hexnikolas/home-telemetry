@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import AsyncGenerator
+from logger.logging_config import logger
 
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
@@ -70,7 +71,6 @@ async def seed_db() -> None:
     """Seeds the database with initial data from current_data.sql if tables are empty."""
     sql_file = Path(__file__).parent / "current_data.sql"
     if not sql_file.exists():
-        print(f"Seed file {sql_file} not found. Skipping seeding.")
         return
 
     # Using the existing engine factory
@@ -80,13 +80,12 @@ async def seed_db() -> None:
             # Using text() to avoid circular imports here
             result = await session.execute(text("SELECT 1 FROM public.systems LIMIT 1;"))
             if result.fetchone():
-                print("Database already contains data. Skipping seeding.")
                 return
         except Exception as e:
             # If table doesn't exist, we can't check. Proceed to seed.
-            print(f"Checking for existing data failed: {e}")
+            logger.info(f"Checking for existing data failed: {e}")
 
-        print(f"Seeding database with initial data from {sql_file}...")
+        logger.info(f"Seeding database with initial data from {sql_file}...")
         try:
             with open(sql_file, "r") as f:
                 content = f.read()
@@ -102,7 +101,7 @@ async def seed_db() -> None:
                 await session.execute(text(statement + ";"))
             
             await session.commit()
-            print("Database seeding completed successfully.")
+            logger.info("Database seeding completed successfully.")
         except Exception as e:
             await session.rollback()
-            print(f"Error during seeding: {e}")
+            logger.info(f"Error during seeding: {e}")

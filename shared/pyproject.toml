@@ -10,7 +10,8 @@ dependencies = [
 
 [tool.poetry]
 packages = [
-    { include = "schemas" }
+    { include = "schemas" },
+    { include = "logger" }
 ]
 
 [build-system]

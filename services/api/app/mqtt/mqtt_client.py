@@ -7,6 +7,7 @@ from app.database import AsyncSessionFactory
 from app.crud.observation import create_observations_bulk
 from schemas.observation_schemas import ObservationWrite
 import redis.asyncio as aioredis
+from shared.logging_config import logger
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 REDIS_TOPIC_MODELS_KEY = "mqtt:topic_models"
@@ -46,12 +47,12 @@ async def handle_sensor_SHT40(data: dict):
     if observations:
         async with AsyncSessionFactory() as db:
             results = await create_observations_bulk(db=db, observations_in=observations)
-            print(f"[DB] Saved {len(results)} observations in bulk")
+            logger.info("Saved observations from SHT40", extra={"count": len(results)})
 
 
 async def handle_sensor_A1T(data: dict):
     """Handle NOUS A1T consumption messages."""
-    print(f"[MQTT] Received NOUS A1T data: {data}")
+    logger.debug("Received NOUS A1T data", extra={"data": data})
     result_time = datetime.now(timezone.utc)
     active_power = data.get("ENERGY", {}).get("Power")
     voltage = data.get("ENERGY", {}).get("Voltage")
@@ -81,7 +82,7 @@ async def handle_sensor_A1T(data: dict):
     if observations:
         async with AsyncSessionFactory() as db:
             results = await create_observations_bulk(db=db, observations_in=observations)
-            print(f"[DB] Saved {len(results)} observations in bulk")
+            logger.info("Saved observations from A1T", extra={"count": len(results)})
 
 
 # ==========================
@@ -119,7 +120,7 @@ async def _build_topic_handlers(redis) -> dict:
         if handler:
             handlers[topic] = handler
         else:
-            print(f"[MQTT] No handler registered for model: {model}")
+            logger.warning("No handler registered for model", extra={"model": model})
     return handlers
 
 
@@ -145,18 +146,18 @@ async def _topic_refresh_loop(client: aiomqtt.Client, redis):
 
                 for topic in new_topics:
                     await client.subscribe(topic)
-                    print(f"[MQTT] Subscribed to new topic: {topic}")
+                    logger.info("Subscribed to new MQTT topic", extra={"topic": topic})
 
                 for topic in removed_topics:
                     await client.unsubscribe(topic)
-                    print(f"[MQTT] Unsubscribed from removed topic: {topic}")
+                    logger.info("Unsubscribed from removed MQTT topic", extra={"topic": topic})
 
                 _topic_handlers = fresh_handlers
 
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"[MQTT] Topic refresh error: {e}")
+            logger.error("Topic refresh error", extra={"error": str(e)})
 
 
 # ==========================
@@ -165,22 +166,22 @@ async def _topic_refresh_loop(client: aiomqtt.Client, redis):
 async def handle_message(message: aiomqtt.Message):
     """Dispatch message to the appropriate handler based on topic."""
     topic = str(message.topic)
-    print(f"[MQTT] Topic: {topic}")
+    logger.debug("Received MQTT message", extra={"topic": topic})
 
     async with _topic_handlers_lock:
         handler = _topic_handlers.get(topic)
 
     if handler is None:
-        print(f"[MQTT] No handler registered for topic: {topic}")
+        logger.warning("No handler registered for topic", extra={"topic": topic})
         return
 
     try:
         data = json.loads(message.payload.decode())
         await handler(data)
     except json.JSONDecodeError:
-        print("[MQTT] Failed to decode JSON payload")
+        logger.error("Failed to decode JSON payload", extra={"topic": topic})
     except Exception as e:
-        print(f"[MQTT] Error processing message: {e}")
+        logger.error("Error processing message", extra={"topic": topic, "error": str(e)})
 
 
 # ==========================
@@ -203,7 +204,7 @@ async def _mqtt_listen():
                 username=mqtt_username,
                 password=mqtt_password,
             ) as client:
-                print("[MQTT] Connected")
+                logger.info("Connected to MQTT broker")
 
                 # Build initial topic→handler map from Redis
                 async with _topic_handlers_lock:
@@ -212,7 +213,7 @@ async def _mqtt_listen():
                 # Subscribe to all initial topics
                 for topic in _topic_handlers:
                     await client.subscribe(topic)
-                    print(f"[MQTT] Subscribed to: {topic}")
+                    logger.info("Subscribed to topic", extra={"topic": topic})
 
                 # Start the refresh loop as a background task
                 refresh_task = asyncio.create_task(_topic_refresh_loop(client, redis))
@@ -225,10 +226,10 @@ async def _mqtt_listen():
                     await asyncio.gather(refresh_task, return_exceptions=True)
 
         except aiomqtt.MqttError as e:
-            print(f"[MQTT] Connection lost: {e}. Reconnecting in 5s...")
+            logger.error("MQTT connection lost, reconnecting in 5s", extra={"error": str(e)})
             await asyncio.sleep(5)
         except Exception as e:
-            print(f"[MQTT] Unexpected error: {e}. Reconnecting in 5s...")
+            logger.error("Unexpected MQTT error, reconnecting in 5s", extra={"error": str(e)})
             await asyncio.sleep(5)
 
 
@@ -238,7 +239,7 @@ async def _mqtt_listen():
 def startup_mqtt():
     global _mqtt_task
     _mqtt_task = asyncio.create_task(_mqtt_listen())
-    print("[MQTT] Listener task started")
+    logger.info("MQTT listener task started")
 
 
 def shutdown_mqtt():
@@ -246,4 +247,5 @@ def shutdown_mqtt():
     if _mqtt_task is not None:
         _mqtt_task.cancel()
         _mqtt_task = None
+        logger.info("MQTT listener task cancelled")
     print("[MQTT] Listener task stopped")

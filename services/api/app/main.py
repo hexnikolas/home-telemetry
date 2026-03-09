@@ -3,8 +3,15 @@ from contextlib import asynccontextmanager
 from app.database import init_engine, init_db
 from app.routers import systems, deployments, procedures, features_of_interest, observed_properties, datastreams, observations, admin
 from app.rate_limit import limiter
+from app.middlewares import CorrelationIdMiddleware, RequestLoggingMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
+from shared.logging_config import setup_logging_json
+import os
+
+# Initialize structured logging
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+logger = setup_logging_json("home-telemetry-api", level=LOG_LEVEL)
 
 api_description = """
 This API provides a standards-based framework for managing **observational data and metadata**.
@@ -96,17 +103,30 @@ tags_metadata = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Starting up the API...")
-    init_engine()  # creates engine from env vars
-    await init_db()
+    logger.info("Starting up the API...", extra={"version": "0.1.0"})
+    try:
+        init_engine()  # creates engine from env vars
+        logger.info("Database engine initialized")
+        
+        await init_db()
+        logger.info("Database initialized and seeded if needed")
 
-    from app.mqtt.mqtt_client import startup_mqtt, shutdown_mqtt
-    startup_mqtt()
+        from app.mqtt.mqtt_client import startup_mqtt, shutdown_mqtt
+        startup_mqtt()
+        logger.info("MQTT client started")
+    except Exception as e:
+        logger.error("Failed to start API", extra={"error": str(e)})
+        raise
 
     yield
 
-    shutdown_mqtt()
-    print("Shutting down the API...")
+    try:
+        shutdown_mqtt()
+        logger.info("MQTT client shutdown")
+    except Exception as e:
+        logger.error("Error during MQTT shutdown", extra={"error": str(e)})
+    
+    logger.info("API shutdown complete")
 
 
 app = FastAPI(
@@ -115,6 +135,10 @@ app = FastAPI(
     openapi_tags=tags_metadata,
     lifespan=lifespan
 )
+
+# Add middleware (order matters - add in reverse order of execution)
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(CorrelationIdMiddleware)
 
 app.include_router(systems.router, prefix="/api/v1/systems", tags=["Systems"])
 app.include_router(deployments.router, prefix="/api/v1/deployments", tags=["Deployments"])
@@ -130,6 +154,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.get("/")
 def read_root():
+    logger.debug("Root endpoint accessed")
     return {
         "Name": "Home Telemetry API",
         "Version": "0.1.0",
@@ -138,4 +163,15 @@ def read_root():
         "Contact": "nikos.zacharatos@protonmail.com",
         "License": "Apache 2.0",
         "Docs": "/docs"
+    }
+
+
+@app.get("/health", tags=["Health"])
+def health_check():
+    """Basic health check endpoint."""
+    logger.debug("Health check requested")
+    return {
+        "status": "healthy",
+        "service": "home-telemetry-api",
+        "version": "0.1.0"
     }

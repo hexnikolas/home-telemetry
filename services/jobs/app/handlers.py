@@ -5,7 +5,7 @@ from typing import Any, Dict
 import asyncio
 import httpx
 from app.queue import job_queue
-from shared.logging_config import logger
+from logger.logging_config import logger
 
 REDIS_MQTT_TOPICS_KEY = "mqtt:topics"
 BATCH_SIZE = 100

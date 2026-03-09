@@ -11,7 +11,7 @@ from app.queue import job_queue
 from app.handlers import (
     handle_sync_mqtt_topics_to_redis
 )
-from shared.logging_config import setup_logging_json
+from logger.logging_config import setup_logging_json
 
 # Initialize logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

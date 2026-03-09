@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Optional, Callable, Any, Dict
 import redis.asyncio as aioredis
 import os
+from logger.logging_config import logger
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -75,13 +76,13 @@ class JobQueue:
     async def connect(self):
         """Initialize Redis connection"""
         self.redis = await aioredis.from_url(self.redis_url, decode_responses=True)
-        print("[JOBS] Redis connection established")
+        logger.info("[JOBS] Redis connection established")
 
     async def disconnect(self):
         """Close Redis connection"""
         if self.redis:
             await self.redis.close()
-            print("[JOBS] Redis connection closed")
+            logger.info("[JOBS] Redis connection closed")
 
     async def reconnect(self):
         """Reconnect to Redis"""
@@ -95,7 +96,7 @@ class JobQueue:
     def register_handler(self, job_type: str, handler: Callable):
         """Register a handler function for a job type"""
         self.job_handlers[job_type] = handler
-        print(f"[JOBS] Registered handler for job type: {job_type}")
+        logger.info(f"[JOBS] Registered handler for job type: {job_type}")
 
     async def enqueue(self, job_type: str, data: Dict[str, Any]) -> Job:
         """Enqueue a new job"""
@@ -116,7 +117,7 @@ class JobQueue:
         # Add to all jobs queue
         await self.redis.lpush("queue:all", job.job_id)
         
-        print(f"[JOBS] Enqueued job {job.job_id} of type {job_type}")
+        logger.info(f"[JOBS] Enqueued job {job.job_id} of type {job_type}")
         return job
 
     async def get_job(self, job_id: str) -> Optional[Job]:
@@ -135,7 +136,7 @@ class JobQueue:
         if not self.redis:
             raise RuntimeError("Redis not connected")
 
-        print("[JOBS] Worker started")
+        logger.info("[JOBS] Worker started")
         
         while True:
             try:
@@ -152,12 +153,12 @@ class JobQueue:
 
                 job = await self.get_job(job_id)
                 if not job:
-                    print(f"[JOBS] Job {job_id} not found")
+                    logger.info(f"[JOBS] Job {job_id} not found")
                     continue
 
                 # Update status to running
                 await self._update_job_status(job_id, JobStatus.RUNNING)
-                print(f"[JOBS] Processing {job.job_type} job {job_id}")
+                logger.info(f"[JOBS] Processing {job.job_type} job {job_id}")
 
                 # Get handler and execute
                 handler = self.job_handlers.get(job.job_type)
@@ -172,28 +173,28 @@ class JobQueue:
                 try:
                     result = await handler(job.data)
                     await self._update_job_status(job_id, JobStatus.COMPLETED, result=result)
-                    print(f"[JOBS] Job {job_id} completed successfully")
+                    logger.info(f"[JOBS] Job {job_id} completed successfully")
                 except Exception as e:
                     await self._update_job_status(
                         job_id,
                         JobStatus.FAILED,
                         error=str(e)
                     )
-                    print(f"[JOBS] Job {job_id} failed: {str(e)}")
+                    logger.info(f"[JOBS] Job {job_id} failed: {str(e)}")
 
             except asyncio.CancelledError:
-                print("[JOBS] Worker shutdown")
+                logger.info("[JOBS] Worker shutdown")
                 break
             except Exception as e:
-                print(f"[JOBS] Worker error: {str(e)}")
+                logger.info(f"[JOBS] Worker error: {str(e)}")
                 # Attempt reconnect
-                print("[JOBS] Attempting to reconnect to Redis...")
+                logger.info("[JOBS] Attempting to reconnect to Redis...")
                 await asyncio.sleep(10)
                 try:
                     await self.reconnect()
-                    print("[JOBS] Reconnected to Redis successfully")
+                    logger.info("[JOBS] Reconnected to Redis successfully")
                 except Exception as re:
-                    print(f"[JOBS] Reconnect failed: {str(re)}")
+                    logger.info(f"[JOBS] Reconnect failed: {str(re)}")
                     await asyncio.sleep(10)
 
     async def _update_job_status(
@@ -248,14 +249,14 @@ class JobQueue:
                 "last_run": datetime.utcnow().isoformat(),
             }
         )
-        print(f"[JOBS] Scheduled periodic job {job_type} every {interval_minutes} minutes")
+        logger.info(f"[JOBS] Scheduled periodic job {job_type} every {interval_minutes} minutes")
 
     async def scheduler_loop(self):
         """Background loop to check and enqueue scheduled jobs"""
         if not self.redis:
             raise RuntimeError("Redis not connected")
 
-        print("[JOBS] Scheduler started")
+        logger.info("[JOBS] Scheduler started")
         
         while True:
             try:
@@ -266,7 +267,7 @@ class JobQueue:
                 due_schedules = await self.redis.zrangebyscore("schedules", 0, now) or []
 
                 for schedule_key in due_schedules:
-                    print(f"[JOBS] Found due schedule: {schedule_key}")
+                    logger.info(f"[JOBS] Found due schedule: {schedule_key}")
                     schedule_data = await self.redis.hgetall(f"schedule:{schedule_key}")
                     if schedule_data:
                         job_type = schedule_data["job_type"]
@@ -280,25 +281,25 @@ class JobQueue:
                         next_run = datetime.utcnow() + timedelta(minutes=interval)
                         await self.redis.zadd("schedules", {schedule_key: next_run.timestamp()})
                         
-                        print(f"[JOBS] Executed scheduled job {job_type}, next run in {interval} minutes")
+                        logger.info(f"[JOBS] Executed scheduled job {job_type}, next run in {interval} minutes")
                     if not schedule_data:
-                        print(f"[JOBS] Missing schedule data for {schedule_key}, skipping")
+                        logger.info(f"[JOBS] Missing schedule data for {schedule_key}, skipping")
                         continue  # 👈 was already there but double-check the key matches exactly
                 
                 await asyncio.sleep(60)  # Check every minute
                 
             except asyncio.CancelledError:
-                print("[JOBS] Scheduler shutdown")
+                logger.info("[JOBS] Scheduler shutdown")
                 break
             except Exception as e:
-                print(f"[JOBS] Scheduler error: {str(e)}")
-                print("[JOBS] Attempting to reconnect to Redis...")
+                logger.info(f"[JOBS] Scheduler error: {str(e)}")
+                logger.info("[JOBS] Attempting to reconnect to Redis...")
                 await asyncio.sleep(10)
                 try:
                     await self.reconnect()
-                    print("[JOBS] Scheduler reconnected to Redis successfully")
+                    logger.info("[JOBS] Scheduler reconnected to Redis successfully")
                 except Exception as re:
-                    print(f"[JOBS] Scheduler reconnect failed: {str(re)}")
+                    logger.info(f"[JOBS] Scheduler reconnect failed: {str(re)}")
                     await asyncio.sleep(10)
 
 

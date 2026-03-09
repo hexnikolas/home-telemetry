@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, status, Query
-from schemas.observed_property_schemas import ObservedPropertyRead, ObservedPropertyUpdate
+from schemas.observed_property_schemas import ObservedPropertyRead, ObservedPropertyUpdate, ObservedPropertyWrite
 from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
@@ -35,7 +35,7 @@ async def get_an_observed_property_by_id(
 
 
 @router.post("/", summary="Create Observed Property", status_code=status.HTTP_201_CREATED, response_model=ObservedPropertyRead)
-async def create_a_new_observed_property(observed_property_in: ObservedPropertyRead, db: AsyncSession = Depends(get_db)):
+async def create_a_new_observed_property(observed_property_in: ObservedPropertyWrite, db: AsyncSession = Depends(get_db)):
     created_observed_property_db = await create_observed_property(db=db, observed_property_in=observed_property_in)
 
     return ObservedPropertyRead(**created_observed_property_db.__dict__)

@@ -9,7 +9,8 @@ from app.crud.system import (
     get_system, 
     create_system, 
     update_system, 
-    delete_system
+    delete_system,
+    get_system_status
 )
 from app.models import SystemTypes
 
@@ -63,39 +64,8 @@ async def delete_a_system(system_id: UUID, db: AsyncSession = Depends(get_db)):
     return None
 
 
-@router.get("/status", response_model=List[SystemStatus], summary="Get System Status", description="Return online status for systems based on latest observation timestamp.")
-async def read_system_status(system_id: List[UUID] = Query(..., description="System IDs to evaluate"), online_within_seconds: int = Query(900, ge=1, le=86400), db: AsyncSession = Depends(get_db)):
-    # stmt = (
-    #     select(
-    #         DBSystem.id.label("system_id"),
-    #         func.max(Observation.result_time).label("last_observation"),
-    #     )
-    #     .select_from(DBSystem)
-    #     .outerjoin(Datastream, Datastream.system_id == DBSystem.id)
-    #     .outerjoin(Observation, Observation.datastream_id == Datastream.id)
-    #     .where(DBSystem.id.in_(system_id))
-    #     .group_by(DBSystem.id)
-    # )
-    # result = await db.execute(stmt)
-    # rows = result.all()
-
-    # now = datetime.now(timezone.utc)
-    # threshold = now - timedelta(seconds=online_within_seconds)
-    # last_by_id = {row.system_id: row.last_observation for row in rows}
-
-    # statuses: List[SystemStatus] = []
-    # for system in system_id:
-    #     last_observation = last_by_id.get(system)
-    #     if last_observation and last_observation.tzinfo is None:
-    #         last_observation = last_observation.replace(tzinfo=timezone.utc)
-    #     online = bool(last_observation and last_observation >= threshold)
-    #     statuses.append(
-    #         SystemStatus(
-    #             system_id=system,
-    #             last_observation=last_observation,
-    #             online=online,
-    #         )
-    #     )
-
-    # return statuses
-    pass
+@router.get("/{system_id}/status", response_model=bool, summary="Get System Status", description="Return online status for systems based on latest observation timestamp.")
+async def read_system_status(system_id: UUID, online_within_seconds: int = Query(900, ge=1, le=86400), db: AsyncSession = Depends(get_db)):
+    # return true if the latest observation for the system is within the online_within_seconds threshold, otherwise false
+    system_status = await get_system_status(db, system_id=system_id, online_within_seconds=online_within_seconds)
+    return system_status

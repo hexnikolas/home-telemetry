@@ -29,10 +29,10 @@ async def read_observations(
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    datastream_id: Optional[UUID] = Query(None, description="Filter observations by datastream ID"),
+    datastream_ids: Optional[List[UUID]] = Query(None, description="Filter observations by datastream IDs"),
     time: Optional[str] = Query(None, description="Filter by time: 'latest', 'timestamp', 'now', or 'timestamp1/timestamp2'. Timestamps in ISO format (2026-02-28T17:01:05)."),
 ):
-    filters = {"datastream_id": datastream_id}
+    filters = {"datastream_id": datastream_ids}
     
     if time:
         time_start, time_end = parse_time_param(time)
@@ -40,9 +40,14 @@ async def read_observations(
         # If "latest" is requested
         if time_start == "latest":
             from sqlalchemy.future import select
+            from sqlalchemy import in_
             stmt = select(Observation)
             if filters.get("datastream_id"):
-                stmt = stmt.where(Observation.datastream_id == filters["datastream_id"])
+                datastream_ids_list = filters["datastream_id"]
+                if isinstance(datastream_ids_list, list):
+                    stmt = stmt.where(Observation.datastream_id.in_(datastream_ids_list))
+                else:
+                    stmt = stmt.where(Observation.datastream_id == datastream_ids_list)
             stmt = stmt.order_by(desc(Observation.result_time)).limit(1)
             result = await db.execute(stmt)
             observations = result.scalars().all()

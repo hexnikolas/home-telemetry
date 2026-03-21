@@ -6,12 +6,21 @@ from app.rate_limit import limiter
 from app.middlewares import CorrelationIdMiddleware, RequestLoggingMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
-from logger.logging_config import setup_logging_json
+from dotenv import load_dotenv
+
+# Load .env
+load_dotenv()
+from logger.logging_config import setup_logging_json, setup_logging_colored
 import os
 
 # Initialize structured logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-logger = setup_logging_json("home-telemetry-api", level=LOG_LEVEL)
+LOG_FORMAT = os.getenv("LOG_FORMAT", "json").lower()
+
+if LOG_FORMAT == "colored":
+    logger = setup_logging_colored("home-telemetry-api", level=LOG_LEVEL)
+else:
+    logger = setup_logging_json("home-telemetry-api", level=LOG_LEVEL)
 
 api_description = """
 This API provides a standards-based framework for managing **observational data and metadata**.
@@ -175,3 +184,4 @@ def health_check():
         "service": "home-telemetry-api",
         "version": "0.1.0"
     }
+

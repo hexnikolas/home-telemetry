@@ -3,9 +3,11 @@ from schemas.observation_schemas import ObservationRead, ObservationUpdate
 from app.database import get_db
 from app.filters import parse_time_param
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import desc
 from typing import List, Optional
 from uuid import UUID
 from app.rate_limit import limiter
+from app.models import Observation
 
 from app.crud.observation import (
     get_all_observations,
@@ -28,11 +30,31 @@ async def read_observations(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     datastream_id: Optional[UUID] = Query(None, description="Filter observations by datastream ID"),
-    time: Optional[str] = Query(None, description="Filter by time. Use 'timestamp' or 'timestamp1/timestamp2'. Timestamps can be ISO format (2026-02-28T17:01:05) or 'now'."),
+    time: Optional[str] = Query(None, description="Filter by time: 'latest', 'timestamp', 'now', or 'timestamp1/timestamp2'. Timestamps in ISO format (2026-02-28T17:01:05)."),
 ):
     filters = {"datastream_id": datastream_id}
-    time_start, time_end = parse_time_param(time) if time else (None, None)
-    observations_data = await get_all_observations(db, limit=limit, offset=offset, filters=filters, time_start=time_start, time_end=time_end)
+    
+    if time:
+        time_start, time_end = parse_time_param(time)
+        
+        # If "latest" is requested
+        if time_start == "latest":
+            from sqlalchemy.future import select
+            stmt = select(Observation)
+            if filters.get("datastream_id"):
+                stmt = stmt.where(Observation.datastream_id == filters["datastream_id"])
+            stmt = stmt.order_by(desc(Observation.result_time)).limit(1)
+            result = await db.execute(stmt)
+            observations = result.scalars().all()
+            if not observations:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=404, detail="No observations were found")
+            return [ObservationRead(**obs.__dict__) for obs in observations]
+        else:
+            observations_data = await get_all_observations(db, limit=limit, offset=offset, filters=filters, time_start=time_start, time_end=time_end)
+    else:
+        observations_data = await get_all_observations(db, limit=limit, offset=offset, filters=filters, time_start=None, time_end=None)
+    
     return [ObservationRead(**obs.__dict__) for obs in observations_data]
 
 

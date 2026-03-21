@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.future import select
+from sqlalchemy import desc
 from app.models import Observation
 from app.filters import apply_filters, apply_time_range
 from fastapi import HTTPException

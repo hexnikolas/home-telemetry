@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status, Query, WebSocket, WebSocketDisco
 from schemas.datastream_schemas import DatastreamRead, DatastreamUpdate
 from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 from app.crud.datastream import (
     get_all_datastreams, 
@@ -23,9 +23,11 @@ router = APIRouter()
 async def read_datastreams(
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    system_ids: Optional[List[UUID]] = Query(None, description="Filter datastreams by system IDs")
 ):
-    datastreams_data = await get_all_datastreams(db, limit=limit, offset=offset)
+    filters = {"system_id": system_ids}
+    datastreams_data = await get_all_datastreams(db, limit=limit, offset=offset, filters=filters)
     return [DatastreamRead(**datastream.__dict__) for datastream in datastreams_data]
 
 @router.get("/{datastream_id}", summary="Get Datastream by ID", status_code=status.HTTP_200_OK, response_model=DatastreamRead)

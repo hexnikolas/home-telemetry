@@ -2,9 +2,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.future import select
 from app.models import Datastream
+from app.filters import apply_filters
 from fastapi import HTTPException
 from uuid import UUID
-from typing import List
+from typing import List, Any
 from schemas.datastream_schemas import DatastreamUpdate
 
 async def get_datastream(db: AsyncSession, datastream_id: UUID) -> Datastream:
@@ -22,8 +23,11 @@ async def get_datastream(db: AsyncSession, datastream_id: UUID) -> Datastream:
 
 
 
-async def get_all_datastreams(db: AsyncSession, limit: int = 50, offset: int = 0) -> List[Datastream]:
-    statement = select(Datastream).limit(limit).offset(offset)
+async def get_all_datastreams(db: AsyncSession, limit: int = 50, offset: int = 0, filters: dict[str, Any] | None = None) -> List[Datastream]:
+    statement = select(Datastream)
+    if filters:
+        statement = apply_filters(statement, Datastream, filters)
+    statement = statement.limit(limit).offset(offset)
     result = await db.execute(statement)
     datastreams = result.scalars().all()
 

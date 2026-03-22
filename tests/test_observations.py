@@ -268,11 +268,11 @@ async def test_list_observations_filter_by_datastream(client):
     system_id = await create_system(client)
     ds_id_1 = await create_datastream(client, system_id)
     ds_id_2 = await create_datastream(client, system_id)
-
+    
     await client.post("/api/v1/observations/", json=observation_payload(ds_id_1))
     await client.post("/api/v1/observations/", json=observation_payload(ds_id_2))
 
-    response = await client.get(f"/api/v1/observations/?datastream_id={ds_id_1}")
+    response = await client.get(f"/api/v1/observations/?datastream_ids={ds_id_1}")
     assert response.status_code == 200
     data = response.json()
     assert all(obs["datastream_id"] == ds_id_1 for obs in data)

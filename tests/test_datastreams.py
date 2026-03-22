@@ -272,6 +272,22 @@ async def test_list_datastreams_pagination(client):
     assert {d["id"] for d in page1}.isdisjoint({d["id"] for d in page2})
 
 
+async def test_list_datastreams_filter_by_system(client):
+    system_id_1 = await create_system(client)
+    system_id_2 = await create_system(client)
+
+    await client.post("/api/v1/datastreams/", json=datastream_payload(system_id_1, name="DS 1"))
+    await client.post("/api/v1/datastreams/", json=datastream_payload(system_id_2, name="DS 2"))
+
+    response = await client.get(f"/api/v1/datastreams/?system_ids={system_id_1}")
+    assert response.status_code == 200
+    data = response.json()
+    assert all(ds["system_id"] == system_id_1 for ds in data)
+    # Ensure we actually filtered something out if there were multiple
+    assert any(ds["system_id"] == system_id_1 for ds in data)
+    assert all(ds["system_id"] != system_id_2 for ds in data)
+
+
 # ── update ────────────────────────────────────────────────────────────────────
 
 async def test_update_datastream_name(client):

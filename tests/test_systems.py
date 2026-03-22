@@ -240,3 +240,59 @@ async def test_update_system_invalid_data(client):
     update_payload = {"system_type": "UNSUPPORTED_TYPE"}  # Invalid data
     update_response = await client.put(f"/api/v1/systems/{system_id}", json=update_payload)
     assert update_response.status_code == 422  # Validation error
+
+
+async def test_get_system_status(client):
+    # Create system
+    payload = {
+        "name": "Status Test System",
+        "system_type": "SENSOR",
+        "external_id": str(uuid4()),
+        "is_mobile": False,
+        "is_gps_enabled": False,
+        "serial_number": str(uuid4()),
+    }
+    system_response = await client.post("/api/v1/systems/", json=payload)
+    system_id = system_response.json()["id"]
+
+    # 1. New system with no datastreams should return 404 per implementation
+    status_response = await client.get(f"/api/v1/systems/{system_id}/status")
+    assert status_response.status_code == 404
+    assert "No datastreams found" in status_response.json()["detail"]
+
+    # Create datastream
+    ds_payload = {
+        "name": "Status DS",
+        "system_id": system_id,
+        "is_gps_enabled": False,
+        "observation_result_type": "FLOAT",
+    }
+    ds_response = await client.post("/api/v1/datastreams/", json=ds_payload)
+    ds_id = ds_response.json()["id"]
+
+    # 2. System with datastream but no observations should return 404 per implementation
+    status_response = await client.get(f"/api/v1/systems/{system_id}/status")
+    assert status_response.status_code == 404
+    assert "No observations found" in status_response.json()["detail"]
+
+    # Create observation (current time)
+    from datetime import datetime, timezone
+    obs_payload = {
+        "datastream_id": ds_id,
+        "result_time": datetime.now(timezone.utc).isoformat(),
+        "result_numeric": 25.0
+    }
+    await client.post("/api/v1/observations/", json=obs_payload)
+
+    # 3. Status should now be True
+    status_response = await client.get(f"/api/v1/systems/{system_id}/status?online_within_seconds=60")
+    assert status_response.status_code == 200
+    assert status_response.json() is True
+
+    # Sleep for 5 seconds
+    await asyncio.sleep(5)
+
+    # 4. Status should be False if we check within a 4 second window
+    status_response = await client.get(f"/api/v1/systems/{system_id}/status?online_within_seconds=4")
+    assert status_response.status_code == 200
+    assert status_response.json() is False

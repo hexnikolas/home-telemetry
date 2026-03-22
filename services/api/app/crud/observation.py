@@ -70,24 +70,27 @@ async def create_observation(db: AsyncSession, observation_in) -> Observation:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    # Add to Redis stream (separate from DB transaction)
-    try:
-        redis = await get_redis_client()
-        channel = f"datastream:{str(new_observation.datastream_id)}"
-        data = {
-            "id": str(new_observation.id),
-            "datastream_id": str(new_observation.datastream_id),
-            "result_time": new_observation.result_time.isoformat(),
-            "result_complex": str(new_observation.result_complex) if new_observation.result_complex is not None else "",
-            "result_numeric": str(new_observation.result_numeric) if new_observation.result_numeric is not None else "",
-            "result_text": new_observation.result_text or "",
-            "result_boolean": str(new_observation.result_boolean) if new_observation.result_boolean is not None else "",
-            "parameters": json.dumps(new_observation.parameters) if new_observation.parameters else "{}"
-        }
-        result = await redis.xadd(channel, data)
-    except Exception as e:
-        logger.warning(f"Warning: Failed to write observation to Redis: {str(e)}")
-        # Don't raise - observation is already created in DB
+        # Add to local and global Redis streams (separate from DB transaction)
+        try:
+            redis = await get_redis_client()
+            channel = f"datastream:{str(new_observation.datastream_id)}"
+            data = {
+                "id": str(new_observation.id),
+                "datastream_id": str(new_observation.datastream_id),
+                "result_time": new_observation.result_time.isoformat(),
+                "result_complex": str(new_observation.result_complex) if new_observation.result_complex is not None else "",
+                "result_numeric": str(new_observation.result_numeric) if new_observation.result_numeric is not None else "",
+                "result_text": new_observation.result_text or "",
+                "result_boolean": str(new_observation.result_boolean) if new_observation.result_boolean is not None else "",
+                "parameters": json.dumps(new_observation.parameters) if new_observation.parameters else "{}"
+            }
+            # Add to local stream (historical/specific)
+            await redis.xadd(channel, data, maxlen=1000, approximate=True)
+            # Add to global stream (for real-time consumers like Notifier)
+            await redis.xadd("observations:global", data, maxlen=5000, approximate=True)
+        except Exception as e:
+            logger.warning(f"Warning: Failed to write observation to Redis: {str(e)}")
+            # Don't raise - observation is already created in DB
 
     return new_observation
 
@@ -106,7 +109,7 @@ async def create_observations_bulk(db: AsyncSession, observations_in: list) -> L
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    # Add all to Redis stream (separate from DB transaction)
+    # Add all to Redis streams (separate from DB transaction)
     try:
         redis = await get_redis_client()
         for obs in new_observations:
@@ -121,7 +124,10 @@ async def create_observations_bulk(db: AsyncSession, observations_in: list) -> L
                 "result_boolean": str(obs.result_boolean) if obs.result_boolean is not None else "",
                 "parameters": json.dumps(obs.parameters) if obs.parameters else "{}"
             }
-            result = await redis.xadd(channel, data)
+            # Add to local stream
+            await redis.xadd(channel, data, maxlen=100, approximate=True)
+            # Add to global stream
+            await redis.xadd("observations:global", data, maxlen=500, approximate=True)
     except Exception as e:
         logger.warning(f"Warning: Failed to write observations to Redis: {str(e)}")
         # Don't raise - observations are already created in DB

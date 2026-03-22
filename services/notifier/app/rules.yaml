@@ -1,0 +1,40 @@
+# Simple YAML-based alert rules
+# You can later move this to a database
+
+rules:
+  # Example: SHT40 Humidity sensor (from your existing mqtt_client logic)
+  - datastream_id: "7a4f551d-9a76-444d-a732-9d136ce02f16"
+    name: "Living Room Humidity"
+    condition: ">"
+    threshold: 70.0
+    priority: 5
+    cooldown_minutes: 30
+
+  # Example: NOUS A1T Power consumption
+  - datastream_id: "08f166d2-398c-4ea2-959f-c146dc3406e1"
+    name: "High Power Usage"
+    condition: ">"
+    threshold: 3000.0
+    priority: 8
+    cooldown_minutes: 10
+
+  - datastream_id: "d84925e1-c18c-4605-90be-3e0079e868f5"
+    name: "High Temperature"
+    condition: ">"
+    threshold: 30.0
+    priority: 8
+    cooldown_minutes: 29
+
+  # Heartbeat alert for temperature sensor (if no data received for 32 minutes)
+  - datastream_id: "7a4f551d-9a76-444d-a732-9d136ce02f16"
+    type: "heartbeat"
+    name: "Temperature Sensor Offline"
+    timeout_minutes: 62
+    priority: 9  # High priority because the sensor is dead
+
+  # Heartbeat alert for power sensor (if no data received for 15 minutes)
+  - datastream_id: "08f166d2-398c-4ea2-959f-c146dc3406e1"
+    type: "heartbeat"
+    name: "Power Sensor Offline"
+    timeout_minutes: 22
+    priority: 9  # High priority because the sensor is dead

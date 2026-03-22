@@ -1,0 +1,34 @@
+name: home-telemetry-notifier
+
+services:
+  gotify:
+    image: gotify/server:latest
+    container_name: home-telemetry-gotify
+    restart: unless-stopped
+    ports:
+      - "9090:80"  # Expose port 9090 locally
+    volumes:
+      - ./data/gotify:/app/data
+    networks:
+      - home-telemetry
+
+  notifier:
+    build:
+      context: ../../
+      dockerfile: services/notifier/Dockerfile
+    container_name: home-telemetry-notifier
+    depends_on:
+      - gotify
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - GOTIFY_URL=http://gotify:80
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    networks:
+      - home-telemetry
+
+networks:
+  home-telemetry:
+    external: true

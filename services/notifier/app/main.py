@@ -6,7 +6,7 @@ import httpx
 import redis.asyncio as aioredis
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
-from logger.logging_config import setup_logging_json
+from logger.logging_config import setup_logging_json, setup_logging_colored
 
 # Configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -18,7 +18,11 @@ CONSUMER_NAME = "notifier-1"
 
 # Initialize logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-logger = setup_logging_json("home-telemetry-notifier", level=LOG_LEVEL)
+LOG_FORMAT = os.getenv("LOG_FORMAT", "json").lower()
+if LOG_FORMAT == "colored":
+    logger = setup_logging_colored("home-telemetry-notifier", level=LOG_LEVEL)
+else:
+    logger = setup_logging_json("home-telemetry-notifier", level=LOG_LEVEL)
 
 class NotifierService:
     def __init__(self):
@@ -44,6 +48,13 @@ class NotifierService:
             # Create consumer group (MKSTREAM creates the stream if it doesn't exist)
             await self.redis.xgroup_create(STREAM_NAME, CONSUMER_GROUP, id="0", mkstream=True)
             logger.info(f"Created consumer group {CONSUMER_GROUP}")
+            
+            # Send a Startup Notification to Gotify
+            await self.send_gotify(
+                "🏠 System Online", 
+                "The Notifier service has started and is monitoring for alerts.",
+                priority=5
+            )
         except aioredis.ResponseError as e:
             if "BUSYGROUP" in str(e):
                 logger.debug("Consumer group already exists")
@@ -166,6 +177,9 @@ class NotifierService:
         
         while True:
             try:
+                # Update service "liveness" timestamp in Redis every loop
+                await self.redis.set("notifier:service_liveness", datetime.now(timezone.utc).isoformat(), ex=60)
+                
                 # Read new messages (> means only never-delivered messages)
                 # Count=1 to process one by one
                 # Block=5000 (5 seconds)

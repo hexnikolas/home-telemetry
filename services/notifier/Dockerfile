@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# Install redis-cli for healthchecks and procps for process management (kill)
+RUN apt-get update && apt-get install -y redis-tools procps && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Install dependencies (will add pyproject.toml/requirements.txt soon)

@@ -14,7 +14,7 @@ rules:
   - datastream_id: "08f166d2-398c-4ea2-959f-c146dc3406e1"
     name: "High Power Usage"
     condition: ">"
-    threshold: 3000.0
+    threshold: 250.0
     priority: 8
     cooldown_minutes: 10
 
@@ -25,14 +25,14 @@ rules:
     priority: 8
     cooldown_minutes: 29
 
-  # Heartbeat alert for temperature sensor (if no data received for 32 minutes)
+  # Heartbeat alert for temperature sensor (if no data received for 62 minutes)
   - datastream_id: "7a4f551d-9a76-444d-a732-9d136ce02f16"
     type: "heartbeat"
     name: "Temperature Sensor Offline"
     timeout_minutes: 62
     priority: 9  # High priority because the sensor is dead
 
-  # Heartbeat alert for power sensor (if no data received for 15 minutes)
+  # Heartbeat alert for power sensor (if no data received for 22 minutes)
   - datastream_id: "08f166d2-398c-4ea2-959f-c146dc3406e1"
     type: "heartbeat"
     name: "Power Sensor Offline"

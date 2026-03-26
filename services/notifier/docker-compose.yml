@@ -26,7 +26,7 @@ services:
       - GOTIFY_URL=http://gotify:80
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "-h", "redis", "get", "notifier:service_liveness"]
+      test: ["CMD", "python", "-c", "import redis; r = redis.from_url('redis://redis:6379/0'); r.get('notifier:service_liveness')"]
       interval: 30s
       timeout: 5s
       retries: 3

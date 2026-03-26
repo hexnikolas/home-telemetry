@@ -41,6 +41,8 @@ class NotifierService:
                 config = yaml.safe_load(f)
                 self.rules = config.get("rules", [])
                 logger.info(f"Loaded {len(self.rules)} alert rules")
+                for i, rule in enumerate(self.rules):
+                    logger.debug(f"Rule {i}: {rule}")
         except Exception as e:
             logger.error(f"Failed to load rules: {e}")
             self.rules = []
@@ -108,54 +110,62 @@ class NotifierService:
 
     async def check_rules(self, observation: Dict[str, Any]):
         """Match observation against rules and check cooldowns."""
-        ds_id = observation.get("datastream_id")
-        val_str = observation.get("result_numeric")
-        
-        if not ds_id:
-            return
-
-        # 1. Update "Last Seen" for Heartbeat monitoring
-        await self.redis.set(f"notifier:last_seen:{ds_id}", datetime.now(timezone.utc).isoformat())
-
-        if not val_str:
-            return
-
         try:
-            val = float(val_str)
-        except ValueError:
+            ds_id = observation.get("datastream_id")
+            val_str = observation.get("result_numeric")
+            
+            if not ds_id:
+                logger.debug(f"Observation has no datastream_id: {observation}")
+                return
+
+            # 1. Update "Last Seen" for Heartbeat monitoring
+            await self.redis.set(f"notifier:last_seen:{ds_id}", datetime.now(timezone.utc).isoformat())
+
+            if not val_str:
+                return
+
+            try:
+                val = float(val_str)
+            except ValueError:
+                return
+        except Exception as e:
+            logger.error(f"Error extracting observation fields: {e}", extra={"observation": observation})
             return
 
         for rule in self.rules:
-            if rule["datastream_id"] == ds_id:
-                # Skip heartbeat rules in this threshold-check loop
-                if rule.get("type") == "heartbeat":
-                    continue
+            try:
+                if rule.get("datastream_id") == ds_id:
+                    # Skip heartbeat rules in this threshold-check loop
+                    if rule.get("type") == "heartbeat":
+                        continue
 
-                triggered = False
-                condition = rule.get("condition")
-                threshold = rule.get("threshold")
+                    triggered = False
+                    condition = rule.get("condition")
+                    threshold = rule.get("threshold")
 
-                if not condition or threshold is None:
-                    continue
+                    if not condition or threshold is None:
+                        continue
 
-                if condition == ">" and val > threshold:
-                    triggered = True
-                elif condition == "<" and val < threshold:
-                    triggered = True
+                    if condition == ">" and val > threshold:
+                        triggered = True
+                    elif condition == "<" and val < threshold:
+                        triggered = True
 
-                if triggered:
-                    # Check Cooldown in Redis
-                    cooldown_key = f"notifier:cooldown:{ds_id}:{rule['name']}"
-                    if not await self.redis.get(cooldown_key):
-                        # Send alert
-                        msg = f"{rule['name']}: {val} (Threshold: {rule['threshold']})"
-                        await self.send_gotify("🚨 Telemetry Alert", msg, rule["priority"])
-                        
-                        # Set Cooldown
-                        cooldown_sec = rule.get("cooldown_minutes", 10) * 60
-                        await self.redis.set(cooldown_key, "1", ex=cooldown_sec)
-                    else:
-                        logger.debug(f"Rule {rule['name']} is in cooldown")
+                    if triggered:
+                        # Check Cooldown in Redis
+                        cooldown_key = f"notifier:cooldown:{ds_id}:{rule['name']}"
+                        if not await self.redis.get(cooldown_key):
+                            # Send alert
+                            msg = f"{rule['name']}: {val} (Threshold: {rule['threshold']})"
+                            await self.send_gotify("🚨 Telemetry Alert", msg, rule["priority"])
+                            
+                            # Set Cooldown
+                            cooldown_sec = rule.get("cooldown_minutes", 10) * 60
+                            await self.redis.set(cooldown_key, "1", ex=cooldown_sec)
+                        else:
+                            logger.debug(f"Rule {rule['name']} is in cooldown")
+            except Exception as e:
+                logger.error(f"Error processing rule: {e}", extra={"rule": rule, "datastream_id": ds_id})
 
     async def monitor_heartbeats(self):
         """Background loop to check for silent sensors."""
@@ -263,6 +273,49 @@ class NotifierService:
                 logger.error(f"Error in RabbitMQ queue monitor: {e}")
                 await asyncio.sleep(10)
 
+    async def monitor_service_health(self):
+        """Background loop to monitor service liveness via Redis keys."""
+        logger.info("Service health monitor started")
+        while True:
+            try:
+                now = datetime.now(timezone.utc)
+                for rule in self.rules:
+                    if rule.get("type") == "service_health":
+                        service_key = rule.get("service")
+                        timeout_sec = rule.get("timeout_seconds", 90)
+                        
+                        liveness_key = f"{service_key}_liveness"
+                        last_seen_str = await self.redis.get(liveness_key)
+                        
+                        if last_seen_str:
+                            # Service is alive, update last seen time
+                            await self.redis.set(f"notifier:service_last_seen:{service_key}", now.isoformat())
+                        else:
+                            # Check if we've seen this service before
+                            last_seen_before_str = await self.redis.get(f"notifier:service_last_seen:{service_key}")
+                            
+                            if last_seen_before_str:
+                                # Service was alive before, check if it's been silent too long
+                                last_seen = datetime.fromisoformat(last_seen_before_str)
+                                diff_sec = (now - last_seen).total_seconds()
+                                
+                                if diff_sec > timeout_sec:
+                                    # Service is down!
+                                    cooldown_key = f"notifier:cooldown:service_health:{service_key}"
+                                    if not await self.redis.get(cooldown_key):
+                                        msg = f"Service '{rule['name']}' has not reported in {int(diff_sec)} seconds"
+                                        await self.send_gotify("🚨 Service Down", msg, rule.get("priority", 9))
+                                        # Set a long cooldown
+                                        await self.redis.set(cooldown_key, "1", ex=5 * 60)
+                            else:
+                                # First time seeing this service, initialize
+                                await self.redis.set(f"notifier:service_last_seen:{service_key}", now.isoformat())
+                
+                await asyncio.sleep(30)  # Check every 30 seconds
+            except Exception as e:
+                logger.error(f"Error in service health monitor: {e}")
+                await asyncio.sleep(10)
+
     async def run(self):
         """Main loop consuming from Redis Stream."""
         logger.info("Notifier service started, waiting for observations...")
@@ -270,6 +323,7 @@ class NotifierService:
         # Start background monitor tasks
         asyncio.create_task(self.monitor_heartbeats())
         asyncio.create_task(self.monitor_rabbitmq_queue())
+        asyncio.create_task(self.monitor_service_health())
         
         while True:
             try:
@@ -288,13 +342,13 @@ class NotifierService:
 
                 for stream, messages in streams:
                     for msg_id, data in messages:
-                        logger.debug(f"Processing message {msg_id}")
+                        logger.debug(f"Processing message {msg_id}: {data}")
                         await self.check_rules(data)
                         # Acknowledge the message
                         await self.redis.xack(STREAM_NAME, CONSUMER_GROUP, msg_id)
 
             except Exception as e:
-                logger.error(f"Error in consumer loop: {e}")
+                logger.error(f"Error in consumer loop: {e}", extra={"error_type": type(e).__name__})
                 await asyncio.sleep(5) # Wait before retry
 
 async def main():

@@ -15,6 +15,10 @@ GOTIFY_TOKEN = os.getenv("GOTIFY_TOKEN", "")
 STREAM_NAME = "observations:global"
 CONSUMER_GROUP = "notifier-group"
 CONSUMER_NAME = "notifier-1"
+RABBITMQ_MANAGEMENT_URL = os.getenv("RABBITMQ_MANAGEMENT_URL")
+RABBITMQ_MANAGEMENT_USER = os.getenv("RABBITMQ_MANAGEMENT_USER")
+RABBITMQ_MANAGEMENT_PASS = os.getenv("RABBITMQ_MANAGEMENT_PASS")
+RABBITMQ_QUEUE_NAME = os.getenv("RABBITMQ_QUEUE_NAME")
 
 # Initialize logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
@@ -82,6 +86,25 @@ class NotifierService:
                 logger.info(f"Notification sent: {title}")
             except Exception as e:
                 logger.error(f"Failed to send Gotify message: {e}")
+
+    async def get_rabbitmq_queue_size(self) -> Optional[int]:
+        """Get RabbitMQ queue depth using management API."""
+        try:
+            auth = (RABBITMQ_MANAGEMENT_USER, RABBITMQ_MANAGEMENT_PASS)
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{RABBITMQ_MANAGEMENT_URL}/api/queues/%2F/{RABBITMQ_QUEUE_NAME}",
+                    auth=auth,
+                    timeout=5
+                )
+                response.raise_for_status()
+                data = response.json()
+                queue_size = data.get("messages", 0)
+                logger.debug(f"RabbitMQ queue size: {queue_size}")
+                return queue_size
+        except Exception as e:
+            logger.error(f"Failed to get RabbitMQ queue size: {e}")
+            return None
 
     async def check_rules(self, observation: Dict[str, Any]):
         """Match observation against rules and check cooldowns."""
@@ -168,12 +191,85 @@ class NotifierService:
                 logger.error(f"Error in heartbeat monitor: {e}")
                 await asyncio.sleep(10)
 
+    async def monitor_rabbitmq_queue(self):
+        """Background loop to monitor RabbitMQ queue depth."""
+        # Check if RabbitMQ management credentials are configured
+        logger.debug(f"RabbitMQ config check:")
+        logger.debug(f"  RABBITMQ_MANAGEMENT_URL: {RABBITMQ_MANAGEMENT_URL}")
+        logger.debug(f"  RABBITMQ_MANAGEMENT_USER: {RABBITMQ_MANAGEMENT_USER}")
+        logger.debug(f"  RABBITMQ_MANAGEMENT_PASS: {'***' if RABBITMQ_MANAGEMENT_PASS else None}")
+        logger.debug(f"  RABBITMQ_QUEUE_NAME: {RABBITMQ_QUEUE_NAME}")
+        
+        if not RABBITMQ_MANAGEMENT_URL or not RABBITMQ_MANAGEMENT_USER or not RABBITMQ_MANAGEMENT_PASS or not RABBITMQ_QUEUE_NAME:
+            missing = []
+            if not RABBITMQ_MANAGEMENT_URL:
+                missing.append("RABBITMQ_MANAGEMENT_URL")
+            if not RABBITMQ_MANAGEMENT_USER:
+                missing.append("RABBITMQ_MANAGEMENT_USER")
+            if not RABBITMQ_MANAGEMENT_PASS:
+                missing.append("RABBITMQ_MANAGEMENT_PASS")
+            if not RABBITMQ_QUEUE_NAME:
+                missing.append("QUEUE_NAME")
+            logger.warning(f"RabbitMQ management configuration incomplete. Missing: {', '.join(missing)}")
+            return
+        
+        logger.info("RabbitMQ queue monitor started")
+        
+        # Find the RabbitMQ queue rule in rules
+        rabbitmq_rule = None
+        for rule in self.rules:
+            if rule.get("type") == "system_metric" and rule.get("metric") == "rabbitmq_queue_size":
+                rabbitmq_rule = rule
+                break
+        
+        if not rabbitmq_rule:
+            logger.debug("No RabbitMQ queue alert rule found in rules.yaml, skipping queue monitoring")
+            return
+        
+        logger.info(f"RabbitMQ queue monitoring: threshold={rabbitmq_rule.get('threshold')}, cooldown={rabbitmq_rule.get('cooldown_minutes')}min")
+        
+        while True:
+            try:
+                queue_size = await self.get_rabbitmq_queue_size()
+                if queue_size is not None:
+                    threshold = rabbitmq_rule.get("threshold", 100)
+                    condition = rabbitmq_rule.get("condition", ">")
+                    
+                    triggered = False
+                    if condition == ">" and queue_size > threshold:
+                        triggered = True
+                    elif condition == "<" and queue_size < threshold:
+                        triggered = True
+                    elif condition == "=" and queue_size == threshold:
+                        triggered = True
+                    
+                    if triggered:
+                        # Queue size exceeded threshold
+                        cooldown_key = "notifier:cooldown:system_metric:rabbitmq_queue_size"
+                        if not await self.redis.get(cooldown_key):
+                            msg = f"{rabbitmq_rule['name']}: {queue_size} messages (Threshold: {threshold})"
+                            await self.send_gotify("⚠️ System Alert", msg, priority=rabbitmq_rule.get("priority", 8))
+                            
+                            # Set cooldown to avoid alert spam
+                            cooldown_min = rabbitmq_rule.get("cooldown_minutes", 30)
+                            await self.redis.set(cooldown_key, "1", ex=cooldown_min * 60)
+                        else:
+                            logger.debug(f"RabbitMQ queue alert is in cooldown (size: {queue_size})")
+                    else:
+                        logger.debug(f"RabbitMQ queue size OK: {queue_size}/{threshold}")
+                
+                await asyncio.sleep(30)  # Check every 30 seconds
+            except Exception as e:
+                logger.error(f"Error in RabbitMQ queue monitor: {e}")
+                await asyncio.sleep(10)
+
     async def run(self):
         """Main loop consuming from Redis Stream."""
         logger.info("Notifier service started, waiting for observations...")
         
-        # Start heartbeat monitor as a background task
+        # Start background monitor tasks
         asyncio.create_task(self.monitor_heartbeats())
+        asyncio.create_task(self.monitor_rabbitmq_queue())
         
         while True:
             try:

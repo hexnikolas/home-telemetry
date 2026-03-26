@@ -38,3 +38,12 @@ rules:
     name: "Power Sensor Offline"
     timeout_minutes: 22
     priority: 9  # High priority because the sensor is dead
+
+  # System metric: RabbitMQ queue size
+  - type: "system_metric"
+    metric: "rabbitmq_queue_size"
+    name: "RabbitMQ Queue Backlog"
+    condition: ">"
+    threshold: 100
+    priority: 8
+    cooldown_minutes: 30

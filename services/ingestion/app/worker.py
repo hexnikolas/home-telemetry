@@ -22,15 +22,21 @@ from app.handlers import get_handler, MODEL_HANDLERS
 
 # Configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_FORMAT = os.getenv("LOG_FORMAT", "json").lower()
 API_BASE_URL = os.getenv("API_BASE_URL")
 OBSERVATIONS_BULK_ENDPOINT = f"{API_BASE_URL}/observations/bulk"
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
 REDIS_URL = os.getenv("REDIS_URL")
 REDIS_TOPIC_MODELS_KEY = "mqtt:topic_models"
 AUTO_ACK = os.getenv("AUTO_ACK", "false").lower() == "true"
+MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "5"))
+BASE_DELAY = int(os.getenv("BASE_DELAY", "5"))
 
 # Initialize logging
-logger = setup_logging_colored("home-telemetry-ingestion-worker", level=LOG_LEVEL)
+if LOG_FORMAT == "colored":
+    logger = setup_logging_colored("home-telemetry-ingestion-worker", level=LOG_LEVEL)
+else:
+    logger = setup_logging_json("home-telemetry-ingestion-worker", level=LOG_LEVEL)
 
 # Global instances
 observation_queue = ObservationQueue(auto_ack=AUTO_ACK)
@@ -54,6 +60,18 @@ def _get_model_for_topic(routing_key: str) -> str:
     return model
 
 
+async def update_liveness():
+    """Periodically update liveness key in Redis for healthchecks."""
+    while True:
+        try:
+            if redis_client:
+                await redis_client.set("ingestion:worker_liveness", "1", ex=60)
+            await asyncio.sleep(30)
+        except Exception as e:
+            logger.debug(f"Error updating liveness: {e}")
+            await asyncio.sleep(30)
+
+
 async def process_messages(messages: List[Dict[str, Any]]):
     """
     Process raw messages from queue through handler and send observations to API.
@@ -69,10 +87,10 @@ async def process_messages(messages: List[Dict[str, Any]]):
     for message in messages:
         try:
             # DEBUG: Print raw message from queue
-            # logger.info(f"\n{'='*60}")
-            # logger.info(f"RAW MESSAGE FROM QUEUE:")
-            # logger.info(f"{'='*60}")
-            # logger.info(f"Full message: {json.dumps(message, indent=2, default=str)}")
+            logger.debug(f"\n{'='*60}")
+            logger.debug(f"RAW MESSAGE FROM QUEUE:")
+            logger.debug(f"{'='*60}")
+            logger.debug(f"Full message: {json.dumps(message, indent=2, default=str)}")
             
             routing_key = message.get("topic")
             data_payload = message
@@ -80,8 +98,8 @@ async def process_messages(messages: List[Dict[str, Any]]):
             if "topic" in data_payload:
                 data_payload = {k: v for k, v in data_payload.items() if k != "topic"}
             
-            # logger.info(f"Routing Key: {routing_key}")
-            # logger.info(f"Data: {json.dumps(data_payload, indent=2, default=str)}")
+            logger.debug(f"Routing Key: {routing_key}")
+            logger.debug(f"Data: {json.dumps(data_payload, indent=2, default=str)}")
 
             if not data_payload:
                 logger.warning(f"Message has no data: {message}")
@@ -102,9 +120,9 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 logger.info(f"{'='*60}\n")
                 continue
 
-            logger.info(f"Model: {model}")
-            logger.info(f"Handler: {handler.__name__}")
-            logger.info(f"{'='*60}\n")
+            logger.debug(f"Model: {model}")
+            logger.debug(f"Handler: {handler.__name__}")
+            logger.debug(f"{'='*60}\n")
 
             logger.debug(f"Processing message from {routing_key} with {model} handler")
 
@@ -138,44 +156,62 @@ async def process_messages(messages: List[Dict[str, Any]]):
 
 async def send_observations_to_api(observations: List[ObservationWrite]):
     """
-    Send observations in bulk to the API.
+    Send observations in bulk to the API with exponential backoff retry.
     
     Returns True if successful (201), False otherwise.
     """
     if not observations:
         return True  # No observations to send is considered success
+    
+    for attempt in range(MAX_RETRIES):
+        try:
+            logger.info(f"Sending batch of {len(observations)} observations to API (attempt {attempt + 1}/{MAX_RETRIES})")
 
-    try:
-        logger.info(f"Sending batch of {len(observations)} observations to API")
+            # Convert to dicts for JSON serialization (mode='json' ensures UUIDs are converted to strings)
+            obs_dicts = [obs.model_dump(mode='json') for obs in observations]
 
-        # Convert to dicts for JSON serialization (mode='json' ensures UUIDs are converted to strings)
-        obs_dicts = [obs.model_dump(mode='json') for obs in observations]
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+                logger.debug(f"POST {OBSERVATIONS_BULK_ENDPOINT}")
+                response = await client.post(
+                    OBSERVATIONS_BULK_ENDPOINT,
+                    json=obs_dicts,
+                )
+                response.raise_for_status()
 
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            logger.debug(f"POST {OBSERVATIONS_BULK_ENDPOINT}")
-            response = await client.post(
-                OBSERVATIONS_BULK_ENDPOINT,
-                json=obs_dicts,
-            )
-            response.raise_for_status()
+                # Check for 201 Created response
+                if response.status_code == 201:
+                    logger.info(f" Successfully ingested {len(observations)} observations")
+                    return True
+                else:
+                    logger.warning(f"✗ API returned {response.status_code} instead of 201")
+                    return False
 
-            # Check for 201 Created response
-            if response.status_code == 201:
-                logger.info(f" Successfully ingested {len(observations)} observations")
-                return True
+        except httpx.TimeoutException as e:
+            if attempt < MAX_RETRIES - 1:
+                delay = BASE_DELAY * (2 ** attempt)
+                logger.warning(f"✗ Request timeout - retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                await asyncio.sleep(delay)
             else:
-                logger.warning(f"✗ API returned {response.status_code} instead of 201")
+                logger.error(f"✗ Request timeout after {MAX_RETRIES} attempts")
                 return False
-
-    except httpx.TimeoutException:
-        logger.error(f"✗ Request timeout when sending observations to API")
-        return False
-    except httpx.HTTPStatusError as e:
-        logger.error(f"✗ API returned error {e.response.status_code}: {e.response.text}")
-        return False
-    except Exception as e:
-        logger.error(f"✗ Failed to send observations to API: {e}")
-        return False
+        except httpx.HTTPStatusError as e:
+            if attempt < MAX_RETRIES - 1:
+                delay = BASE_DELAY * (2 ** attempt)
+                logger.warning(f"✗ API returned error {e.response.status_code} - retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                await asyncio.sleep(delay)
+            else:
+                logger.error(f"✗ API returned error {e.response.status_code}: {e.response.text}")
+                return False
+        except Exception as e:
+            if attempt < MAX_RETRIES - 1:
+                delay = BASE_DELAY * (2 ** attempt)
+                logger.warning(f"✗ Failed to send observations - retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+                await asyncio.sleep(delay)
+            else:
+                logger.error(f"✗ Failed to send observations after {MAX_RETRIES} attempts: {e}")
+                return False
+    
+    return False
 
 
 async def main():
@@ -218,6 +254,9 @@ async def main():
         logger.info("Starting message consumption...")
         logger.info("Waiting for messages...")
 
+        # Start liveness heartbeat task
+        liveness_task = asyncio.create_task(update_liveness())
+        
         # Start consuming messages (blocks indefinitely)
         await observation_queue.start_consuming()
 

@@ -1,15 +1,19 @@
 """
 Job handlers for background tasks
 """
+import os
 from typing import Any, Dict
 import asyncio
 import httpx
 from app.queue import job_queue
 from logger.logging_config import logger
 
+# Configuration
+API_URL = os.getenv("API_URL", "http://localhost:8000")
+SYSTEMS_API_URL = f"{API_URL}/api/v1/systems/"
 REDIS_MQTT_TOPICS_KEY = "mqtt:topics"
 BATCH_SIZE = 100
-SYSTEMS_API_URL = "http://localhost:8000/api/v1/systems/"  # adjust to your base URL
+
 
 async def handle_sync_mqtt_topics_to_redis(data: Dict[str, Any]) -> None:
     """

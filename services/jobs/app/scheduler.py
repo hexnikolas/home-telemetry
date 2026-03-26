@@ -8,11 +8,27 @@ import asyncio
 import sys
 import os
 from app.queue import job_queue
-from logger.logging_config import setup_logging_json
+from logger.logging_config import setup_logging_json, setup_logging_colored
 
 # Initialize logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-logger = setup_logging_json("home-telemetry-scheduler", level=LOG_LEVEL)
+LOG_FORMAT = os.getenv("LOG_FORMAT", "json").lower()
+if LOG_FORMAT == "colored":
+    logger = setup_logging_colored("home-telemetry-jobs-scheduler", level=LOG_LEVEL)
+else:
+    logger = setup_logging_json("home-telemetry-jobs-scheduler", level=LOG_LEVEL)
+
+
+async def update_liveness():
+    """Periodically update liveness key in Redis for healthchecks."""
+    while True:
+        try:
+            if job_queue.redis:
+                await job_queue.redis.set("jobs:scheduler_liveness", "1", ex=60)
+            await asyncio.sleep(30)
+        except Exception as e:
+            logger.debug("Error updating liveness", extra={"error": str(e)})
+            await asyncio.sleep(30)
 
 
 async def setup_schedules():
@@ -47,6 +63,9 @@ async def main():
         await setup_schedules()
         
         logger.info("Starting scheduler loop...")
+        # Start liveness heartbeat task
+        liveness_task = asyncio.create_task(update_liveness())
+        
         # Start scheduler loop (blocks indefinitely)
         await job_queue.scheduler_loop()
         

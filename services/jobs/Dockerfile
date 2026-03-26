@@ -1,18 +1,24 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
 # Install Poetry
 RUN pip install --no-cache-dir poetry
 
-# Copy dependency files
-COPY pyproject.toml poetry.lock* ./
+ENV POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_NO_INTERACTION=1
 
-# Install dependencies
-RUN poetry config virtualenvs.create false && poetry install --no-dev
+# Copy the shared module to match the path referenced in pyproject.toml
+COPY shared/ /home/nikos/home-telemetry/shared/
+
+# Copy dependency files
+COPY services/jobs/pyproject.toml services/jobs/poetry.lock* ./
+
+# Remove lock file so poetry resolves paths fresh from pyproject.toml
+RUN rm -f poetry.lock && poetry install --only main
 
 # Copy application code
-COPY app/ app/
+COPY services/jobs/app/ app/
 
 # Default to worker, can be overridden for scheduler
 CMD ["python", "-m", "app.worker"]

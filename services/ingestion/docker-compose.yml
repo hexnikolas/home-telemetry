@@ -1,0 +1,66 @@
+name: home-telemetry-ingestion
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: home-telemetry-rabbitmq
+    networks:
+      - home-telemetry
+    ports:
+      - "1883:1883"
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: nikos
+      RABBITMQ_DEFAULT_PASS: 12345
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+      - ./enabled_plugins:/etc/rabbitmq/enabled_plugins
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  rabbitmq-init:
+    image: python:3.12-slim
+    networks:
+      - home-telemetry
+    volumes:
+      - ./init_rabbitmq.py:/init_rabbitmq.py
+    command: >
+      sh -c "pip install aio-pika -q &&
+             python /init_rabbitmq.py"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: "no"
+
+  worker:
+    build:
+      context: ../../
+      dockerfile: services/ingestion/Dockerfile
+    container_name: home-telemetry-ingestion-worker
+    networks:
+      - home-telemetry
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: 1
+      PYTHONPATH: /home/nikos/home-telemetry
+    volumes:
+      - .:/app
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    command: python -m app.worker
+
+networks:
+  home-telemetry:
+    external: true
+
+volumes:
+  rabbitmq_data:

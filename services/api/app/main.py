@@ -119,22 +119,12 @@ async def lifespan(app: FastAPI):
         
         await init_db()
         logger.info("Database initialized and seeded if needed")
-
-        from app.mqtt.mqtt_client import startup_mqtt, shutdown_mqtt
-        startup_mqtt()
-        logger.info("MQTT client started")
     except Exception as e:
         logger.error("Failed to start API", extra={"error": str(e)})
         raise
 
     yield
 
-    try:
-        shutdown_mqtt()
-        logger.info("MQTT client shutdown")
-    except Exception as e:
-        logger.error("Error during MQTT shutdown", extra={"error": str(e)})
-    
     logger.info("API shutdown complete")
 
 

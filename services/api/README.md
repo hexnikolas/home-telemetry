@@ -8,7 +8,6 @@ This directory contains the backend API service for home telemetry, built with [
 - **Routers:** Modular route definitions in `app/routers/` (e.g., datastreams, deployments, features_of_interest, observations, etc.)
 - **Database:** Async database access via SQLAlchemy (see `app/database.py`)
 - **CRUD Logic:** Encapsulated in `app/crud/` for each resource
-- **MQTT Integration:** MQTT client in `app/mqtt/mqtt_client.py` for sensor data ingestion
 - **Configuration:** Environment variables loaded from `.env`
 
 ## Usage

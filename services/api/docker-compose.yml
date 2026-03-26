@@ -12,7 +12,6 @@ services:
       - app/.env
     environment:
       DATABASE_HOST: home-telemetry-timescaledb
-      MQTT_HOST: mosquitto
     restart: unless-stopped
     networks:
       - home-telemetry

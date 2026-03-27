@@ -13,11 +13,12 @@ from app.crud.system import (
     get_system_status
 )
 from app.models import SystemTypes
+from app.auth.dependencies import require_scope
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[SystemRead], summary="List Systems", description="List systems with optional filtering, pagination, and sorting")
+@router.get("/", response_model=List[SystemRead], summary="List Systems", description="List systems with optional filtering, pagination, and sorting", dependencies=[Depends(require_scope("systems:read"))])
 async def read_systems(
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
@@ -27,7 +28,7 @@ async def read_systems(
     systems_data = await get_all_systems(db, limit=limit, offset=offset, system_type=system_type)
     return [SystemRead(**system.__dict__) for system in systems_data]
 
-@router.get("/{system_id}", summary="Get System by ID", status_code=status.HTTP_200_OK, response_model=SystemRead)
+@router.get("/{system_id}", summary="Get System by ID", status_code=status.HTTP_200_OK, response_model=SystemRead, dependencies=[Depends(require_scope("systems:read"))])
 async def get_a_system_by_id(
     system_id: UUID, 
     db: AsyncSession = Depends(get_db)
@@ -37,14 +38,14 @@ async def get_a_system_by_id(
     return SystemRead(**db_system.__dict__)
 
 
-@router.post("/", summary="Create System", status_code=status.HTTP_201_CREATED, response_model=SystemRead)
+@router.post("/", summary="Create System", status_code=status.HTTP_201_CREATED, response_model=SystemRead, dependencies=[Depends(require_scope("systems:write"))])
 async def create_a_new_system(system_in: SystemRead, db: AsyncSession = Depends(get_db)):
     created_system_db = await create_system(db=db, system_in=system_in)
 
     return SystemRead(**created_system_db.__dict__)
 
 
-@router.put("/{system_id}", summary="Update System", status_code=status.HTTP_200_OK, response_model=SystemRead)
+@router.put("/{system_id}", summary="Update System", status_code=status.HTTP_200_OK, response_model=SystemRead, dependencies=[Depends(require_scope("systems:write"))])
 async def update_a_system(system_id: UUID, system_in: SystemUpdate, db: AsyncSession = Depends(get_db)):
     db_system_to_update = await get_system(db, system_id=system_id)
 
@@ -55,7 +56,7 @@ async def update_a_system(system_id: UUID, system_in: SystemUpdate, db: AsyncSes
     return SystemRead(**updated_system_db.__dict__)
 
 
-@router.delete("/{system_id}", summary="Delete System", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{system_id}", summary="Delete System", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_scope("systems:write"))])
 async def delete_a_system(system_id: UUID, db: AsyncSession = Depends(get_db)):
     db_system_to_delete = await get_system(db, system_id=system_id)
     
@@ -64,7 +65,7 @@ async def delete_a_system(system_id: UUID, db: AsyncSession = Depends(get_db)):
     return None
 
 
-@router.get("/{system_id}/status", response_model=bool, summary="Get System Status", description="Return online status for systems based on latest observation timestamp.")
+@router.get("/{system_id}/status", response_model=bool, summary="Get System Status", description="Return online status for systems based on latest observation timestamp.", dependencies=[Depends(require_scope("systems:read"))])
 async def read_system_status(system_id: UUID, online_within_seconds: int = Query(900, ge=1, le=86400), db: AsyncSession = Depends(get_db)):
     # return true if the latest observation for the system is within the online_within_seconds threshold, otherwise false
     system_status = await get_system_status(db, system_id=system_id, online_within_seconds=online_within_seconds)

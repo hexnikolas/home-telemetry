@@ -14,12 +14,13 @@ from app.crud.datastream import (
 from app.crud.observation import get_redis_client
 import json
 from logger.logging_config import logger
+from app.auth.dependencies import require_scope
 
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[DatastreamRead], summary="List Datastreams", description="List datastreams with optional filtering, pagination, and sorting")
+@router.get("/", response_model=List[DatastreamRead], summary="List Datastreams", description="List datastreams with optional filtering, pagination, and sorting", dependencies=[Depends(require_scope("datastreams:read"))])
 async def read_datastreams(
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
@@ -30,7 +31,7 @@ async def read_datastreams(
     datastreams_data = await get_all_datastreams(db, limit=limit, offset=offset, filters=filters)
     return [DatastreamRead(**datastream.__dict__) for datastream in datastreams_data]
 
-@router.get("/{datastream_id}", summary="Get Datastream by ID", status_code=status.HTTP_200_OK, response_model=DatastreamRead)
+@router.get("/{datastream_id}", summary="Get Datastream by ID", status_code=status.HTTP_200_OK, response_model=DatastreamRead, dependencies=[Depends(require_scope("datastreams:read"))])
 async def get_a_datastream_by_id(
     datastream_id: UUID, 
     db: AsyncSession = Depends(get_db)
@@ -40,14 +41,14 @@ async def get_a_datastream_by_id(
     return DatastreamRead(**db_datastream.__dict__)
 
 
-@router.post("/", summary="Create Datastream", status_code=status.HTTP_201_CREATED, response_model=DatastreamRead)
+@router.post("/", summary="Create Datastream", status_code=status.HTTP_201_CREATED, response_model=DatastreamRead, dependencies=[Depends(require_scope("datastreams:write"))])
 async def create_a_new_datastream(datastream_in: DatastreamRead, db: AsyncSession = Depends(get_db)):
     created_datastream_db = await create_datastream(db=db, datastream_in=datastream_in)
 
     return DatastreamRead(**created_datastream_db.__dict__)
 
 
-@router.put("/{datastream_id}", summary="Update Datastream", status_code=status.HTTP_200_OK, response_model=DatastreamRead)
+@router.put("/{datastream_id}", summary="Update Datastream", status_code=status.HTTP_200_OK, response_model=DatastreamRead, dependencies=[Depends(require_scope("datastreams:write"))])
 async def update_a_datastream(datastream_id: UUID, datastream_in: DatastreamUpdate, db: AsyncSession = Depends(get_db)):
     db_datastream_to_update = await get_datastream(db, datastream_id=datastream_id)
 
@@ -58,7 +59,7 @@ async def update_a_datastream(datastream_id: UUID, datastream_in: DatastreamUpda
     return DatastreamRead(**updated_datastream_db.__dict__)
 
 
-@router.delete("/{datastream_id}", summary="Delete Datastream", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{datastream_id}", summary="Delete Datastream", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_scope("datastreams:write"))])
 async def delete_a_datastream(datastream_id: UUID, db: AsyncSession = Depends(get_db)):
     db_datastream_to_delete = await get_datastream(db, datastream_id=datastream_id)
 

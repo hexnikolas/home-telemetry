@@ -1,8 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 import redis.asyncio as aioredis
 import os
 import json
+
+from app.auth.dependencies import require_scope
 
 router = APIRouter(prefix="/admin/jobs", tags=["Admin"])
 
@@ -11,7 +13,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 async def get_redis():
     return await aioredis.from_url(REDIS_URL, decode_responses=True)
 
-@router.get("/")
+@router.get("/", dependencies=[Depends(require_scope("admin:read"))])
 async def list_jobs(limit: int = 20):
     """List all enqueued and processed jobs from Redis"""
     redis = await get_redis()
@@ -41,7 +43,7 @@ async def list_jobs(limit: int = 20):
     finally:
         await redis.close()
 
-@router.get("/schedules")
+@router.get("/schedules", dependencies=[Depends(require_scope("admin:read"))])
 async def list_schedules():
     """List all periodic job schedules"""
     redis = await get_redis()
@@ -67,7 +69,7 @@ async def list_schedules():
     finally:
         await redis.close()
 
-@router.get("/{job_id}")
+@router.get("/{job_id}", dependencies=[Depends(require_scope("admin:read"))])
 async def get_job_details(job_id: str):
     """Get detailed information about a specific job"""
     redis = await get_redis()
@@ -89,7 +91,7 @@ async def get_job_details(job_id: str):
     finally:
         await redis.close()
 
-@router.delete("/schedules/{job_type}/{interval_minutes}")
+@router.delete("/schedules/{job_type}/{interval_minutes}", dependencies=[Depends(require_scope("admin:write"))])
 async def delete_schedule(job_type: str, interval_minutes: int):
     """Delete a periodic job schedule"""
     redis = await get_redis()
@@ -109,7 +111,7 @@ async def delete_schedule(job_type: str, interval_minutes: int):
     finally:
         await redis.close()
 
-@router.delete("/{job_id}")
+@router.delete("/{job_id}", dependencies=[Depends(require_scope("admin:write"))])
 async def delete_job(job_id: str):
     """Delete a job and its metadata from Redis"""
     redis = await get_redis()

@@ -6,11 +6,12 @@ from typing import List
 from uuid import UUID
 from app.crud.deployment import get_all_deployments, get_deployment, create_deployment, update_deployment, delete_deployment
 from pydantic import UUID4
+from app.auth.dependencies import require_scope
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[DeploymentRead], summary="List Deployments", description="List deployments with optional filtering, pagination, and sorting")
+@router.get("/", response_model=List[DeploymentRead], summary="List Deployments", description="List deployments with optional filtering, pagination, and sorting", dependencies=[Depends(require_scope("deployments:read"))])
 async def read_deployments(
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
@@ -20,7 +21,7 @@ async def read_deployments(
     return [DeploymentRead(**{k: v for k, v in deployment.__dict__.items() if not k.startswith("_")}) for deployment in deployments_data]
 
 
-@router.get("/{deployment_id}", summary="Get Deployment by ID", status_code=status.HTTP_200_OK, response_model=DeploymentRead)
+@router.get("/{deployment_id}", summary="Get Deployment by ID", status_code=status.HTTP_200_OK, response_model=DeploymentRead, dependencies=[Depends(require_scope("deployments:read"))])
 async def get_a_deployment_by_id(
     deployment_id: UUID,
     db: AsyncSession = Depends(get_db)
@@ -33,7 +34,7 @@ async def get_a_deployment_by_id(
     return DeploymentRead(**deployment_data)
 
 
-@router.post("/", summary="Create Deployment", status_code=status.HTTP_201_CREATED, response_model=DeploymentRead)
+@router.post("/", summary="Create Deployment", status_code=status.HTTP_201_CREATED, response_model=DeploymentRead, dependencies=[Depends(require_scope("deployments:write"))])
 async def create_a_new_deployment(system_id: UUID4, deployment_in: DeploymentWrite, db: AsyncSession = Depends(get_db)):
     created_deployment_db = await create_deployment(db=db, system_id=system_id, deployment_in=deployment_in)
 
@@ -44,7 +45,7 @@ async def create_a_new_deployment(system_id: UUID4, deployment_in: DeploymentWri
     return DeploymentRead(**deployment_data)
 
 
-@router.put("/{deployment_id}", summary="Update Deployment", status_code=status.HTTP_200_OK, response_model=DeploymentRead)
+@router.put("/{deployment_id}", summary="Update Deployment", status_code=status.HTTP_200_OK, response_model=DeploymentRead, dependencies=[Depends(require_scope("deployments:write"))])
 async def update_a_deployment(deployment_id: UUID, deployment_in: DeploymentUpdate, db: AsyncSession = Depends(get_db)):
     db_deployment_to_update = await get_deployment(db, deployment_id=deployment_id)
 
@@ -58,7 +59,7 @@ async def update_a_deployment(deployment_id: UUID, deployment_in: DeploymentUpda
     return DeploymentRead(**deployment_data)
 
 
-@router.delete("/{deployment_id}", summary="Delete Deployment", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{deployment_id}", summary="Delete Deployment", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_scope("deployments:write"))])
 async def delete_a_deployment(deployment_id: UUID, db: AsyncSession = Depends(get_db)):
     db_deployment_to_delete = await get_deployment(db, deployment_id=deployment_id)
 

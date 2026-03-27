@@ -17,12 +17,13 @@ from app.crud.observation import (
     update_observation,
     delete_observation,
 )
+from app.auth.dependencies import require_scope
 
 router = APIRouter()
 
 
 
-@router.get("/", response_model=List[ObservationRead], summary="List Observations", description="List all observations")
+@router.get("/", response_model=List[ObservationRead], summary="List Observations", description="List all observations", dependencies=[Depends(require_scope("observations:read"))])
 @limiter.limit("60/minute")
 async def read_observations(
     request: Request,
@@ -63,7 +64,7 @@ async def read_observations(
     return [ObservationRead(**obs.__dict__) for obs in observations_data]
 
 
-@router.get("/{observation_id}", summary="Get Observation by ID", status_code=status.HTTP_200_OK, response_model=ObservationRead)
+@router.get("/{observation_id}", summary="Get Observation by ID", status_code=status.HTTP_200_OK, response_model=ObservationRead, dependencies=[Depends(require_scope("observations:read"))])
 @limiter.limit("60/minute")
 async def get_an_observation_by_id(
     request: Request,
@@ -75,21 +76,21 @@ async def get_an_observation_by_id(
     return ObservationRead(**db_observation.__dict__)
 
 
-@router.post("/", summary="Create Observation", status_code=status.HTTP_201_CREATED, response_model=ObservationRead)
+@router.post("/", summary="Create Observation", status_code=status.HTTP_201_CREATED, response_model=ObservationRead, dependencies=[Depends(require_scope("observations:write"))])
 async def create_a_new_observation(observation_in: ObservationRead, db: AsyncSession = Depends(get_db)):
     created_observation_db = await create_observation(db=db, observation_in=observation_in)
 
     return ObservationRead(**created_observation_db.__dict__)
 
 
-@router.post("/bulk", summary="Create Observations in Bulk", status_code=status.HTTP_201_CREATED, response_model=List[ObservationRead])
+@router.post("/bulk", summary="Create Observations in Bulk", status_code=status.HTTP_201_CREATED, response_model=List[ObservationRead], dependencies=[Depends(require_scope("observations:write"))])
 async def create_observations_in_bulk(observations_in: List[ObservationRead], db: AsyncSession = Depends(get_db)):
     created_observations_db = await create_observations_bulk(db=db, observations_in=observations_in)
 
     return [ObservationRead(**obs.__dict__) for obs in created_observations_db]
 
 
-@router.put("/{observation_id}", summary="Update Observation", status_code=status.HTTP_200_OK, response_model=ObservationRead)
+@router.put("/{observation_id}", summary="Update Observation", status_code=status.HTTP_200_OK, response_model=ObservationRead, dependencies=[Depends(require_scope("observations:write"))])
 async def update_an_observation(observation_id: UUID, observation_in: ObservationUpdate, db: AsyncSession = Depends(get_db)):
     db_observation_to_update = await get_observation(db, observation_id=observation_id)
 
@@ -100,7 +101,7 @@ async def update_an_observation(observation_id: UUID, observation_in: Observatio
     return ObservationRead(**updated_observation_db.__dict__)
 
 
-@router.delete("/{observation_id}", summary="Delete Observation", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{observation_id}", summary="Delete Observation", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_scope("observations:write"))])
 async def delete_an_observation(observation_id: UUID, db: AsyncSession = Depends(get_db)):
     db_observation_to_delete = await get_observation(db, observation_id=observation_id)
 

@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from contextlib import asynccontextmanager
 from app.database import init_engine, init_db
 from app.routers import systems, deployments, procedures, features_of_interest, observed_properties, datastreams, observations, admin
+from app.routers.auth import router as auth_router
 from app.rate_limit import limiter
 from app.middlewares import CorrelationIdMiddleware, RequestLoggingMiddleware
 from slowapi.errors import RateLimitExceeded
@@ -105,7 +106,14 @@ tags_metadata = [
             "Each observation records the result time, optional location, parameters, "
             "and the result value (JSON, numeric, text, or boolean)."
         ),
-    }
+    },
+    {
+        "name": "Auth",
+        "description": (
+            "OAuth2 **Client Credentials** token endpoint (RFC 6749 §4.4). "
+            "Use the **Authorize** button above to authenticate and unlock all endpoints."
+        ),
+    },
 ]
 
 #SEED_FILE = Path(__file__).parent / "observed_properties.json"
@@ -147,6 +155,7 @@ app.include_router(observed_properties.router, prefix="/api/v1/observed-properti
 app.include_router(datastreams.router, prefix="/api/v1/datastreams", tags=["Datastreams"])
 app.include_router(observations.router, prefix="/api/v1/observations", tags=["Observations"])
 app.include_router(admin.router, prefix="/api/v1", tags=["Admin"])
+app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

@@ -15,11 +15,12 @@ from schemas.feature_of_interest_schemas import (
     FeatureOfInterestWrite,
     FeatureOfInterestUpdate
 )
+from app.auth.dependencies import require_scope
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[FeatureOfInterestRead], summary="List Features of Interest")
+@router.get("/", response_model=List[FeatureOfInterestRead], summary="List Features of Interest", dependencies=[Depends(require_scope("properties:read"))])
 async def read_features_of_interest(
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
@@ -29,13 +30,13 @@ async def read_features_of_interest(
     return [FeatureOfInterestRead(**feature.__dict__) for feature in features]
 
 
-@router.get("/{feature_id}", response_model=FeatureOfInterestRead, summary="Get Feature of Interest by ID")
+@router.get("/{feature_id}", response_model=FeatureOfInterestRead, summary="Get Feature of Interest by ID", dependencies=[Depends(require_scope("properties:read"))])
 async def read_feature_of_interest(feature_id: UUID, db: AsyncSession = Depends(get_db)):
     feature = await get_feature_of_interest(db, feature_id)
     return FeatureOfInterestRead(**feature.__dict__)
 
 
-@router.post("/", response_model=FeatureOfInterestRead, status_code=status.HTTP_201_CREATED, summary="Create Feature of Interest")
+@router.post("/", response_model=FeatureOfInterestRead, status_code=status.HTTP_201_CREATED, summary="Create Feature of Interest", dependencies=[Depends(require_scope("properties:write"))])
 async def create_new_feature_of_interest(
     feature_in: FeatureOfInterestWrite, db: AsyncSession = Depends(get_db)
 ):
@@ -43,7 +44,7 @@ async def create_new_feature_of_interest(
     return FeatureOfInterestRead(**feature.__dict__)
 
 
-@router.put("/{feature_id}", response_model=FeatureOfInterestRead, summary="Update Feature of Interest")
+@router.put("/{feature_id}", response_model=FeatureOfInterestRead, summary="Update Feature of Interest", dependencies=[Depends(require_scope("properties:write"))])
 async def update_existing_feature_of_interest(
     feature_id: UUID, feature_in: FeatureOfInterestUpdate, db: AsyncSession = Depends(get_db)
 ):
@@ -52,7 +53,7 @@ async def update_existing_feature_of_interest(
     return FeatureOfInterestRead(**updated_feature.__dict__)
 
 
-@router.delete("/{feature_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete Feature of Interest")
+@router.delete("/{feature_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete Feature of Interest", dependencies=[Depends(require_scope("properties:write"))])
 async def delete_feature_of_interest(feature_id: UUID, db: AsyncSession = Depends(get_db)):
     feature = await get_feature_of_interest(db=db, feature_id=feature_id)
     await remove_feature_of_interest(db, feature)  # Use the renamed function

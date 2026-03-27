@@ -30,6 +30,6 @@ This directory contains a Docker setup for running Grafana for data visualizatio
 
 5. **My Setup**
       
-   ![Your Grafana Dashboard](https://i.imgur.com/UNtdEM9.png)
+   ![Your Grafana Dashboard](https://i.imgur.com/EqS9pLv.png)
 
 

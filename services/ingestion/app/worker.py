@@ -31,6 +31,12 @@ REDIS_TOPIC_MODELS_KEY = "mqtt:topic_models"
 AUTO_ACK = os.getenv("AUTO_ACK", "false").lower() == "true"
 MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "5"))
 BASE_DELAY = int(os.getenv("BASE_DELAY", "5"))
+API_CLIENT_ID = os.getenv("API_CLIENT_ID", "ingestion-worker")
+API_CLIENT_SECRET = os.getenv("API_CLIENT_SECRET", "")
+# Derive base host URL: strip /api/v1 suffix so token URL points to the right place
+# e.g. http://home-telemetry-api:8000/api/v1 → http://home-telemetry-api:8000/auth/token
+_api_host = API_BASE_URL.split("/api/")[0] if API_BASE_URL and "/api/" in API_BASE_URL else (API_BASE_URL or "")
+API_TOKEN_URL = f"{_api_host}/auth/token"
 
 # Initialize logging
 if LOG_FORMAT == "colored":
@@ -38,10 +44,51 @@ if LOG_FORMAT == "colored":
 else:
     logger = setup_logging_json("home-telemetry-ingestion-worker", level=LOG_LEVEL)
 
+# ---------------------------------------------------------------------------
+# Token manager — fetches a JWT on startup and refreshes before expiry
+# ---------------------------------------------------------------------------
+class TokenManager:
+    def __init__(self) -> None:
+        self._token: str = ""
+        self._expires_at: float = 0.0  # Unix timestamp
+        self._refresh_buffer: int = 60  # refresh this many seconds before expiry
+
+    def _is_valid(self) -> bool:
+        import time
+        return bool(self._token) and time.time() < self._expires_at - self._refresh_buffer
+
+    async def get_token(self) -> str:
+        if not self._is_valid():
+            await self._fetch()
+        return self._token
+
+    async def _fetch(self) -> None:
+        import time
+        if not API_CLIENT_SECRET:
+            raise RuntimeError("API_CLIENT_SECRET is not set — cannot authenticate with the API")
+        logger.info(f"Fetching auth token for client '{API_CLIENT_ID}'")
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                API_TOKEN_URL,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": API_CLIENT_ID,
+                    "client_secret": API_CLIENT_SECRET,
+                },
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            self._token = body["access_token"]
+            expires_in = int(body.get("expires_in", 900))
+            self._expires_at = time.time() + expires_in
+            logger.info(f"Auth token acquired (expires in {expires_in}s)")
+
+
 # Global instances
 observation_queue = ObservationQueue(auto_ack=AUTO_ACK)
 redis_client: aioredis.Redis = None
 topic_model_map: dict = {}  # Cache of topic→model mappings from Redis
+token_manager = TokenManager()
 
 
 def _get_model_for_topic(routing_key: str) -> str:
@@ -158,11 +205,13 @@ async def send_observations_to_api(observations: List[ObservationWrite]):
             # Convert to dicts for JSON serialization (mode='json' ensures UUIDs are converted to strings)
             obs_dicts = [obs.model_dump(mode='json') for obs in observations]
 
+            token = await token_manager.get_token()
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 logger.debug(f"POST {OBSERVATIONS_BULK_ENDPOINT}")
                 response = await client.post(
                     OBSERVATIONS_BULK_ENDPOINT,
                     json=obs_dicts,
+                    headers={"Authorization": f"Bearer {token}"},
                 )
                 response.raise_for_status()
 
@@ -222,6 +271,11 @@ async def main():
         logger.info("Connecting to Redis...")
         redis_client = await aioredis.from_url(REDIS_URL, decode_responses=True)
         logger.info(" Connected to Redis")
+
+        # Fetch initial auth token (fails fast if credentials are wrong)
+        logger.info("Fetching API auth token...")
+        await token_manager.get_token()
+        logger.info("API auth token ready")
 
         # Load topic→model mappings from Redis
         logger.info(f"Loading topic→model mappings from Redis (key: {REDIS_TOPIC_MODELS_KEY})...")

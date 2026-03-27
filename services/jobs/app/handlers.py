@@ -3,6 +3,7 @@ Job handlers for background tasks
 """
 import os
 import time
+import json
 from typing import Any, Dict
 import asyncio
 import httpx
@@ -12,7 +13,8 @@ from logger.logging_config import logger
 # Configuration
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 SYSTEMS_API_URL = f"{API_URL}/api/v1/systems/"
-REDIS_MQTT_TOPICS_KEY = "mqtt:topics"
+DATASTREAMS_API_URL = f"{API_URL}/api/v1/datastreams/"
+REDIS_TOPIC_CONFIG_KEY = "mqtt:topic_config"
 BATCH_SIZE = 100
 
 # Auth configuration
@@ -62,74 +64,107 @@ token_manager = TokenManager()
 
 async def handle_sync_mqtt_topics_to_redis(data: Dict[str, Any]) -> None:
     """
-    Fetch all SENSOR systems via HTTP API, extract their external_id,
-    and add them to a Redis Set for the MQTT client to consume.
+    Fetch all SENSOR systems and their datastreams via the API.
+
+    Builds mqtt:topic_config in Redis:
+        { external_id: '{"model": "A1T", "datastreams": {"Power": "uuid", ...}}' }
+
+    The "datastreams" dict is keyed by properties.mqtt_key on each datastream,
+    so handlers can resolve payload field names to datastream IDs without any
+    hardcoded UUIDs.
     """
     logger.info("Starting MQTT topic sync job")
     redis = job_queue.redis
 
     offset = 0
-    added = 0
+    total_topics = 0
+    all_topic_config: Dict[str, str] = {}
 
     token = await token_manager.get_token()
+    auth_headers = {"Authorization": f"Bearer {token}"}
+
     async with httpx.AsyncClient() as client:
         while True:
             try:
                 logger.debug("Fetching systems from API", extra={"offset": offset, "limit": BATCH_SIZE})
-                response = await client.get(
+                sys_response = await client.get(
                     SYSTEMS_API_URL,
-                    params={
-                        "system_type": "SENSOR",
-                        "limit": BATCH_SIZE,
-                        "offset": offset
-                    },
-                    headers={"Authorization": f"Bearer {token}"}
+                    params={"system_type": "SENSOR", "limit": BATCH_SIZE, "offset": offset},
+                    headers=auth_headers,
                 )
 
-                if response.status_code == 404:
+                if sys_response.status_code == 404:
                     logger.info("No more systems to fetch")
                     break
 
-                response.raise_for_status()
-                systems = response.json()
+                sys_response.raise_for_status()
+                systems = sys_response.json()
 
-                topics_with_models = {
-                    s["external_id"]: s["model"]
-                    for s in systems
-                    if s.get("external_id") and s.get("model")
-                }
+                if not systems:
+                    break
 
-                if topics_with_models:
-                    current = await redis.hgetall("mqtt:topic_models")
-                    stale = set(current.keys()) - set(topics_with_models.keys())
-                    if stale:
-                        logger.info("Removing stale MQTT topics", extra={"count": len(stale)})
-                        await redis.hdel("mqtt:topic_models", *stale)
-                    await redis.hset("mqtt:topic_models", mapping=topics_with_models)
-                    added += len(topics_with_models)
-                    logger.info(
-                        "Batch processed and synced to Redis",
-                        extra={
-                            "systems_fetched": len(systems),
-                            "topics_added": len(topics_with_models),
-                            "total_added": added
+                # Filter to systems that have both an external_id and a model
+                valid_systems = [s for s in systems if s.get("external_id") and s.get("model")]
+
+                if valid_systems:
+                    system_ids = [s["id"] for s in valid_systems]
+
+                    # Fetch all datastreams for this batch of systems in one call
+                    ds_response = await client.get(
+                        DATASTREAMS_API_URL,
+                        params=[("system_ids", sid) for sid in system_ids],
+                        headers=auth_headers,
+                    )
+                    ds_response.raise_for_status()
+                    datastreams = ds_response.json()
+
+                    # Group datastreams by system_id, keyed by mqtt_key
+                    ds_by_system: Dict[str, Dict[str, str]] = {}
+                    for ds in datastreams:
+                        sid = ds.get("system_id")
+                        mqtt_key = ds.get("properties", {}).get("mqtt_key")
+                        if sid and mqtt_key:
+                            ds_by_system.setdefault(sid, {})[mqtt_key] = ds["id"]
+
+                    for s in valid_systems:
+                        topic = s["external_id"]
+                        config = {
+                            "model": s["model"],
+                            "datastreams": ds_by_system.get(s["id"], {}),
                         }
+                        all_topic_config[topic] = json.dumps(config)
+                        total_topics += 1
+
+                    logger.info(
+                        "Batch processed",
+                        extra={"systems_fetched": len(systems), "topics_built": len(valid_systems)},
                     )
 
-                
                 if len(systems) < BATCH_SIZE:
                     logger.info("Reached end of systems")
                     break
 
                 offset += BATCH_SIZE
+
             except httpx.HTTPError as e:
-                logger.error("HTTP error during system fetch", extra={"error": str(e)})
+                logger.error("HTTP error during topic sync", extra={"error": str(e)})
                 raise
             except Exception as e:
                 logger.error("Unexpected error during MQTT topic sync", extra={"error": str(e)})
                 raise
 
-    logger.info("MQTT topic sync complete", extra={"total_topics_added": added})
+    if all_topic_config:
+        # Remove stale topics
+        current = await redis.hkeys(REDIS_TOPIC_CONFIG_KEY)
+        stale = set(current) - set(all_topic_config.keys())
+        if stale:
+            logger.info("Removing stale topic configs", extra={"count": len(stale)})
+            await redis.hdel(REDIS_TOPIC_CONFIG_KEY, *stale)
+
+        await redis.hset(REDIS_TOPIC_CONFIG_KEY, mapping=all_topic_config)
+        logger.info("MQTT topic config synced to Redis", extra={"total_topics": total_topics})
+    else:
+        logger.warning("No valid topics found — Redis not updated")
 
 # Example: Data processing job
 async def handle_process_observations(data: Dict[str, Any]) -> Dict[str, Any]:

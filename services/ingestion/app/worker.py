@@ -27,7 +27,7 @@ API_BASE_URL = os.getenv("API_BASE_URL")
 OBSERVATIONS_BULK_ENDPOINT = f"{API_BASE_URL}/observations/bulk"
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
 REDIS_URL = os.getenv("REDIS_URL")
-REDIS_TOPIC_MODELS_KEY = "mqtt:topic_models"
+REDIS_TOPIC_CONFIG_KEY = "mqtt:topic_config"
 AUTO_ACK = os.getenv("AUTO_ACK", "false").lower() == "true"
 MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "5"))
 BASE_DELAY = int(os.getenv("BASE_DELAY", "5"))
@@ -87,24 +87,27 @@ class TokenManager:
 # Global instances
 observation_queue = ObservationQueue(auto_ack=AUTO_ACK)
 redis_client: aioredis.Redis = None
-topic_model_map: dict = {}  # Cache of topic→model mappings from Redis
+topic_config_map: dict = {}  # Cache of topic → {"model": ..., "datastreams": {...}} from Redis
 token_manager = TokenManager()
 
 
-def _get_model_for_topic(routing_key: str) -> str:
+def _get_topic_config(routing_key: str):
     """
-    Convert RabbitMQ routing key (with dots) to MQTT topic (with slashes),
-    then look up model in Redis cache.
-    
-    Example: "tele.NOUS_A1T_4E4984.SENSOR" → "tele/NOUS_A1T_4E4984/SENSOR" → "A1T"
+    Convert RabbitMQ routing key (dots) to MQTT topic (slashes),
+    then return (model, datastreams) from the Redis config cache.
+
+    Example: "tele.NOUS_A1T_4E4984.SENSOR" → "tele/NOUS_A1T_4E4984/SENSOR"
+             → ("A1T", {"Power": "uuid", "Voltage": "uuid", "Total": "uuid"})
     """
     mqtt_topic = routing_key.replace(".", "/")
-    model = topic_model_map.get(mqtt_topic)
-    if model:
-        logger.debug(f"Matched routing_key '{routing_key}' → mqtt_topic '{mqtt_topic}' → model '{model}'")
-    else:
-        logger.warning(f"No model found for topic: {mqtt_topic}")
-    return model
+    config = topic_config_map.get(mqtt_topic)
+    if config:
+        model = config.get("model")
+        datastreams = config.get("datastreams", {})
+        logger.debug(f"Matched '{routing_key}' → model='{model}', datastreams={list(datastreams.keys())}")
+        return model, datastreams
+    logger.warning(f"No topic config found for: {mqtt_topic}")
+    return None, {}
 
 
 async def process_messages(messages: List[Dict[str, Any]]):
@@ -141,10 +144,10 @@ async def process_messages(messages: List[Dict[str, Any]]):
                 logger.info(f"{'='*60}\n")
                 continue
 
-            # Determine model from routing key
-            model = _get_model_for_topic(routing_key)
+            # Determine model + datastreams from routing key
+            model, datastreams = _get_topic_config(routing_key)
             if not model:
-                logger.warning(f"No handler for topic: {routing_key}")
+                logger.warning(f"No topic config for: {routing_key}")
                 logger.info(f"{'='*60}\n")
                 continue
 
@@ -162,7 +165,7 @@ async def process_messages(messages: List[Dict[str, Any]]):
             logger.debug(f"Processing message from {routing_key} with {model} handler")
 
             # Call handler to get observations
-            obs = await handler(data_payload)
+            obs = await handler(data_payload, datastreams)
             observations.extend(obs)
             logger.debug(f"Handler {model} generated {len(obs)} observations")
 
@@ -253,7 +256,7 @@ async def send_observations_to_api(observations: List[ObservationWrite]):
 
 async def main():
     """Main worker entry point"""
-    global redis_client, topic_model_map
+    global redis_client, topic_config_map
 
     logger.info("=" * 60)
     logger.info("Starting Observations Ingestion Worker")
@@ -277,12 +280,13 @@ async def main():
         await token_manager.get_token()
         logger.info("API auth token ready")
 
-        # Load topic→model mappings from Redis
-        logger.info(f"Loading topic→model mappings from Redis (key: {REDIS_TOPIC_MODELS_KEY})...")
-        topic_model_map = await redis_client.hgetall(REDIS_TOPIC_MODELS_KEY)
-        logger.info(f"Loaded {len(topic_model_map)} topic mappings:")
-        for mqtt_topic, model in topic_model_map.items():
-            logger.info(f"  {mqtt_topic} → {model}")
+        # Load topic configs from Redis (written by jobs sync)
+        logger.info(f"Loading topic configs from Redis (key: {REDIS_TOPIC_CONFIG_KEY})...")
+        raw_configs = await redis_client.hgetall(REDIS_TOPIC_CONFIG_KEY)
+        topic_config_map = {topic: json.loads(cfg) for topic, cfg in raw_configs.items()}
+        logger.info(f"Loaded {len(topic_config_map)} topic configs:")
+        for mqtt_topic, cfg in topic_config_map.items():
+            logger.info(f"  {mqtt_topic} → model={cfg.get('model')}, datastreams={list(cfg.get('datastreams', {}).keys())}")
 
         # Connect to RabbitMQ
         logger.info("Connecting to RabbitMQ...")

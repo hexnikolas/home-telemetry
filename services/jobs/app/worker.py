@@ -22,18 +22,6 @@ else:
     logger = setup_logging_json("home-telemetry-jobs-worker", level=LOG_LEVEL)
 
 
-async def update_liveness():
-    """Periodically update liveness key in Redis for healthchecks."""
-    while True:
-        try:
-            if job_queue.redis:
-                await job_queue.redis.set("jobs:worker_liveness", "1", ex=60)
-            await asyncio.sleep(30)
-        except Exception as e:
-            logger.debug("Error updating liveness", extra={"error": str(e)})
-            await asyncio.sleep(30)
-
-
 async def main():
     logger.info("=" * 50)
     logger.info("Starting Background Worker Service")
@@ -50,8 +38,6 @@ async def main():
         logger.info("Registered job handlers", extra={"handlers": ["sync_mqtt_topics_to_redis"]})
         
         logger.info("Starting worker job processing loop...")
-        # Start liveness heartbeat task
-        liveness_task = asyncio.create_task(update_liveness())
         
         # Start worker loop (blocks indefinitely)
         await job_queue.process_jobs()

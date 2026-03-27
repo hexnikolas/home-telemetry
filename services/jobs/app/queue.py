@@ -221,6 +221,8 @@ class JobQueue:
             await self.redis.sadd("jobs:completed", job_id)
             # Set expiry to 7 days
             await self.redis.expire(f"job:{job_id}", 7 * 24 * 3600)
+            # Also ensure jobs:completed set doesn't grow forever (re-set TTL)
+            await self.redis.expire("jobs:completed", 7 * 24 * 3600)
 
     async def schedule_periodic_job(
         self,
@@ -249,6 +251,8 @@ class JobQueue:
                 "last_run": datetime.utcnow().isoformat(),
             }
         )
+        # Set TTL on schedule (7 days) - will be updated each run
+        await self.redis.expire(f"schedule:{schedule_key}", 7 * 24 * 3600)
         logger.info(f"[JOBS] Scheduled periodic job {job_type} every {interval_minutes} minutes")
 
     async def scheduler_loop(self):

@@ -9,7 +9,8 @@ import sys
 import os
 from app.queue import job_queue
 from app.handlers import (
-    handle_sync_mqtt_topics_to_redis
+    handle_sync_mqtt_topics_to_redis,
+    token_manager
 )
 from logger.logging_config import setup_logging_json, setup_logging_colored
 
@@ -36,6 +37,11 @@ async def main():
         # Register all job handlers
         job_queue.register_handler("sync_mqtt_topics_to_redis", handle_sync_mqtt_topics_to_redis)
         logger.info("Registered job handlers", extra={"handlers": ["sync_mqtt_topics_to_redis"]})
+
+        # Warm up auth token
+        logger.info("Fetching initial API auth token...")
+        await token_manager.get_token()
+        logger.info("API auth token ready")
         
         logger.info("Starting worker job processing loop...")
         

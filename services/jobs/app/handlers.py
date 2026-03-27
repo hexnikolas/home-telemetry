@@ -2,6 +2,7 @@
 Job handlers for background tasks
 """
 import os
+import time
 from typing import Any, Dict
 import asyncio
 import httpx
@@ -13,6 +14,50 @@ API_URL = os.getenv("API_URL", "http://localhost:8000")
 SYSTEMS_API_URL = f"{API_URL}/api/v1/systems/"
 REDIS_MQTT_TOPICS_KEY = "mqtt:topics"
 BATCH_SIZE = 100
+
+# Auth configuration
+API_CLIENT_ID = os.getenv("API_CLIENT_ID", "")
+API_CLIENT_SECRET = os.getenv("API_CLIENT_SECRET", "")
+# Derive token URL: strip /api/... suffix, append /auth/token
+_api_base = API_URL.split("/api/")[0] if "/api/" in API_URL else API_URL
+API_TOKEN_URL = f"{_api_base}/auth/token"
+
+
+class TokenManager:
+    """Caches and auto-refreshes an OAuth2 client credentials token."""
+
+    def __init__(self) -> None:
+        self._token: str = ""
+        self._expires_at: float = 0.0
+        self._refresh_buffer: int = 60  # refresh 60s before expiry
+
+    def _is_valid(self) -> bool:
+        return bool(self._token) and time.time() < self._expires_at - self._refresh_buffer
+
+    async def get_token(self) -> str:
+        if not self._is_valid():
+            await self._fetch()
+        return self._token
+
+    async def _fetch(self) -> None:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                API_TOKEN_URL,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": API_CLIENT_ID,
+                    "client_secret": API_CLIENT_SECRET,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            self._token = payload["access_token"]
+            expires_in = payload.get("expires_in", 900)
+            self._expires_at = time.time() + expires_in
+            logger.info("Fetched new access token", extra={"expires_in": expires_in})
+
+
+token_manager = TokenManager()
 
 
 async def handle_sync_mqtt_topics_to_redis(data: Dict[str, Any]) -> None:
@@ -26,6 +71,7 @@ async def handle_sync_mqtt_topics_to_redis(data: Dict[str, Any]) -> None:
     offset = 0
     added = 0
 
+    token = await token_manager.get_token()
     async with httpx.AsyncClient() as client:
         while True:
             try:
@@ -36,7 +82,8 @@ async def handle_sync_mqtt_topics_to_redis(data: Dict[str, Any]) -> None:
                         "system_type": "SENSOR",
                         "limit": BATCH_SIZE,
                         "offset": offset
-                    }
+                    },
+                    headers={"Authorization": f"Bearer {token}"}
                 )
 
                 if response.status_code == 404:

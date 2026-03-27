@@ -12,9 +12,9 @@ services:
     volumes:
       - ./app:/app/app
     healthcheck:
-      test: ["CMD", "python", "-c", "import redis; r = redis.from_url('redis://redis:6379/0'); r.get('jobs:worker_liveness')"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "python", "-c", "import redis; r = redis.from_url('redis://redis:6379/0'); r.ping()"]
+      interval: 10s
+      timeout: 5s
       retries: 3
     networks:
       - home-telemetry
@@ -31,9 +31,9 @@ services:
     volumes:
       - ./app:/app/app
     healthcheck:
-      test: ["CMD", "python", "-c", "import redis; r = redis.from_url('redis://redis:6379/0'); r.get('jobs:scheduler_liveness')"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "python", "-c", "import redis; r = redis.from_url('redis://redis:6379/0'); r.ping()"]
+      interval: 10s
+      timeout: 5s
       retries: 3
     networks:
       - home-telemetry

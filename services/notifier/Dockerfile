@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y redis-tools procps && rm -rf /var/lib/a
 WORKDIR /app
 
 # Install dependencies (will add pyproject.toml/requirements.txt soon)
-RUN pip install --no-cache-dir redis aioredis httpx pyyaml loguru
+RUN pip install --no-cache-dir redis aioredis httpx pyyaml loguru docker
 
 # Copy shared code
 COPY shared /shared

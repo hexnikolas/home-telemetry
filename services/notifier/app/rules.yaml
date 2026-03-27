@@ -1,5 +1,4 @@
-# Simple YAML-based alert rules
-# You can later move this to a database
+# can later be moved to a database
 
 rules:
   # Example: SHT40 Humidity sensor (from your existing mqtt_client logic)
@@ -47,23 +46,3 @@ rules:
     threshold: 100
     priority: 8
     cooldown_minutes: 30
-
-  # Service health monitoring via liveness keys
-  - type: "service_health"
-    service: "ingestion:worker"
-    name: "Ingestion Worker Health"
-    timeout_seconds: 600
-    priority: 9
-
-  # - type: "service_health"
-  #   service: "jobs:scheduler"
-  #   name: "Jobs Scheduler Health"
-  #   timeout_seconds: 90
-  #   priority: 9
-
-  # - type: "service_health"
-  #   service: "jobs:worker"
-  #   name: "Jobs Worker Health"
-  #   timeout_seconds: 
-  #   priority: 9
-

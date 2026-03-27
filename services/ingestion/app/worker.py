@@ -60,18 +60,6 @@ def _get_model_for_topic(routing_key: str) -> str:
     return model
 
 
-async def update_liveness():
-    """Periodically update liveness key in Redis for healthchecks."""
-    while True:
-        try:
-            if redis_client:
-                await redis_client.set("ingestion:worker_liveness", "1", ex=60)
-            await asyncio.sleep(30)
-        except Exception as e:
-            logger.debug(f"Error updating liveness: {e}")
-            await asyncio.sleep(30)
-
-
 async def process_messages(messages: List[Dict[str, Any]]):
     """
     Process raw messages from queue through handler and send observations to API.
@@ -253,9 +241,6 @@ async def main():
 
         logger.info("Starting message consumption...")
         logger.info("Waiting for messages...")
-
-        # Start liveness heartbeat task
-        liveness_task = asyncio.create_task(update_liveness())
         
         # Start consuming messages (blocks indefinitely)
         await observation_queue.start_consuming()

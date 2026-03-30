@@ -70,7 +70,7 @@ async def create_observation(db: AsyncSession, observation_in) -> Observation:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-        # Add to local and global Redis streams (separate from DB transaction)
+        # Add to datastream-specific Redis stream (for WebSocket subscribers and Notifier)
         try:
             redis = await get_redis_client()
             channel = f"datastream:{str(new_observation.datastream_id)}"
@@ -84,10 +84,8 @@ async def create_observation(db: AsyncSession, observation_in) -> Observation:
                 "result_boolean": str(new_observation.result_boolean) if new_observation.result_boolean is not None else "",
                 "parameters": json.dumps(new_observation.parameters) if new_observation.parameters else "{}"
             }
-            # Add to local stream (historical/specific)
+            # Add to per-datastream stream (consumed by WebSocket clients and Notifier)
             await redis.xadd(channel, data, maxlen=1000, approximate=True)
-            # Add to global stream (for real-time consumers like Notifier)
-            await redis.xadd("observations:global", data, maxlen=5000, approximate=True)
         except Exception as e:
             logger.warning(f"Warning: Failed to write observation to Redis: {str(e)}")
             # Don't raise - observation is already created in DB
@@ -95,7 +93,17 @@ async def create_observation(db: AsyncSession, observation_in) -> Observation:
     return new_observation
 
 
-async def create_observations_bulk(db: AsyncSession, observations_in: list) -> List[Observation]:
+async def create_observations_bulk(
+    db: AsyncSession, 
+    observations_in: list
+) -> List[Observation]:
+    """
+    Create multiple observations in bulk.
+    
+    Args:
+        db: Database session
+        observations_in: List of observations to create
+    """
     new_observations = [Observation(**obs.model_dump()) for obs in observations_in]
     try:
         db.add_all(new_observations)
@@ -124,10 +132,8 @@ async def create_observations_bulk(db: AsyncSession, observations_in: list) -> L
                 "result_boolean": str(obs.result_boolean) if obs.result_boolean is not None else "",
                 "parameters": json.dumps(obs.parameters) if obs.parameters else "{}"
             }
-            # Add to local stream
-            await redis.xadd(channel, data, maxlen=100, approximate=True)
-            # Add to global stream
-            await redis.xadd("observations:global", data, maxlen=500, approximate=True)
+            # Publish to per-datastream stream (consumed by WebSocket clients and Notifier)
+            await redis.xadd(channel, data, maxlen=1000, approximate=True)
     except Exception as e:
         logger.warning(f"Warning: Failed to write observations to Redis: {str(e)}")
         # Don't raise - observations are already created in DB

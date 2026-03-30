@@ -24,11 +24,15 @@ Notification rules define which events trigger alerts and how they are delivered
 
 ## Python Script
 
-The notifier is implemented as a Python script. It connects to a Redis instance and subscribes to the `observations:global` channel to receive real-time updates from other services.
+The notifier is implemented as a Python script. It connects to a Redis instance and subscribes to specific `datastream:{uuid}` streams for datastreams configured in the rules to receive real-time observation updates from the API.
 
 ## Redis Integration
 
-The service uses Redis Pub/Sub to listen for new observation events. When a message is published to `observations:global`, the notifier processes the event and determines if a notification should be sent.
+The service uses Redis Streams to listen for new observation events. For each datastream configured in `rules.yaml`, the notifier subscribes to its dedicated `datastream:{uuid}` stream using consumer groups. This targeted approach reduces Redis load by only monitoring relevant datastreams instead of all observations.
+
+When observations are published to monitored datastream streams, the notifier:
+- Updates heartbeat tracking (last-seen timestamps) to detect offline sensors
+- Evaluates threshold rules to trigger alerts when values exceed configured limits
 
 ## Gotify Notifications
 

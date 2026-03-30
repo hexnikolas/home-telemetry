@@ -14,7 +14,7 @@ from logger.logging_config import setup_logging_json, setup_logging_colored
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 GOTIFY_URL = os.getenv("GOTIFY_URL", "http://gotify:80")
 GOTIFY_TOKEN = os.getenv("GOTIFY_TOKEN", "")
-STREAM_NAME = "observations:global"
+# Note: We now subscribe to specific datastream:{uuid} streams instead of a global stream
 CONSUMER_GROUP = "notifier-group"
 CONSUMER_NAME = "notifier-1"
 RABBITMQ_MANAGEMENT_URL = os.getenv("RABBITMQ_MANAGEMENT_URL", "http://rabbitmq:15672")
@@ -112,16 +112,26 @@ class NotifierService:
         await self.redis.ping()
         logger.info("Redis connected")
 
-        # -- Consumer group --
-        try:
-            await self.redis.xgroup_create(
-                STREAM_NAME, CONSUMER_GROUP, id="0", mkstream=True
-            )
-            logger.info(f"Created consumer group '{CONSUMER_GROUP}'")
-        except aioredis.ResponseError as exc:
-            if "BUSYGROUP" not in str(exc):
-                raise
-            logger.debug(f"Consumer group '{CONSUMER_GROUP}' already exists")
+        # -- Consumer groups for each monitored datastream --
+        # Create consumer groups for all datastreams in rules (heartbeat + threshold)
+        monitored_datastreams = set()
+        for rule in self.rules:
+            ds_id = rule.get("datastream_id")
+            if ds_id:
+                monitored_datastreams.add(ds_id)
+        
+        logger.info(f"Setting up consumer groups for {len(monitored_datastreams)} datastreams")
+        for ds_id in monitored_datastreams:
+            stream_name = f"datastream:{ds_id}"
+            try:
+                await self.redis.xgroup_create(
+                    stream_name, CONSUMER_GROUP, id="0", mkstream=True
+                )
+                logger.debug(f"Created consumer group for {stream_name}")
+            except aioredis.ResponseError as exc:
+                if "BUSYGROUP" not in str(exc):
+                    raise
+                logger.debug(f"Consumer group already exists for {stream_name}")
 
         # -- Docker --
         logger.info("Connecting to Docker …")
@@ -448,7 +458,7 @@ class NotifierService:
     # Main loop
     # ------------------------------------------------------------------
     async def run(self) -> None:
-        """Start background monitors and consume the Redis observation stream."""
+        """Start background monitors and consume Redis observation streams for monitored datastreams."""
         logger.info("Notifier service starting …")
 
         tasks = [
@@ -458,26 +468,46 @@ class NotifierService:
             asyncio.create_task(self.monitor_heartbeats()),
         ]
 
+        # Build list of datastream streams to monitor
+        monitored_datastreams = set()
+        for rule in self.rules:
+            ds_id = rule.get("datastream_id")
+            if ds_id:
+                monitored_datastreams.add(ds_id)
+        
+        if not monitored_datastreams:
+            logger.warning("No datastreams configured in rules - consumer loop will not run")
+            # Just run the background monitors
+            await asyncio.gather(*tasks)
+            return
+        
+        # Build the streams dict for xreadgroup: {stream_name: ">"}
+        streams_dict = {f"datastream:{ds_id}": ">" for ds_id in monitored_datastreams}
+        logger.info(f"Monitoring {len(streams_dict)} datastream(s)")
         logger.info("All monitors started — entering consumer loop")
 
         try:
             while True:
                 try:
+                    # Read from all monitored datastream streams at once
                     streams = await self.redis.xreadgroup(
                         CONSUMER_GROUP,
                         CONSUMER_NAME,
-                        {STREAM_NAME: ">"},
+                        streams_dict,
                         count=10,
                         block=5000,
                     )
                     if not streams:
                         continue
 
-                    for _stream, messages in streams:
+                    for stream_name, messages in streams:
+                        # Extract stream name (datastream:{uuid})
+                        stream_name_str = stream_name.decode() if isinstance(stream_name, bytes) else stream_name
+                        
                         for msg_id, data in messages:
-                            logger.debug(f"Processing observation {msg_id}")
+                            logger.debug(f"Processing observation {msg_id} from {stream_name_str}")
                             await self.check_rules(data)
-                            await self.redis.xack(STREAM_NAME, CONSUMER_GROUP, msg_id)
+                            await self.redis.xack(stream_name_str, CONSUMER_GROUP, msg_id)
 
                 except aioredis.ConnectionError:
                     logger.error("Redis connection lost — retrying in 5 s")

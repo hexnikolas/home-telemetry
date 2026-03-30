@@ -109,10 +109,57 @@ The worker authenticates to the API using **OAuth2 Client Credentials**:
 
 Credentials must exist in the API's client registry (`services/api/app/auth/clients.py`).
 
-
 ---
 
+## Message Reliability & Dead Letter Queue (DLQ)
 
+The ingestion worker implements a robust retry and failure handling mechanism:
+
+### Retry Logic
+
+1. **API-Level Retries:** Each batch of observations is retried up to `API_MAX_RETRIES` times (default: 5) with exponential backoff if the API request fails
+2. **Message-Level Retries:** If a batch fails after all API retries, each message is tracked with a retry counter in RabbitMQ headers
+
+### Dead Letter Queue
+
+When a message fails processing after `MAX_MESSAGE_RETRIES` attempts (default: 3), it's moved to the **Dead Letter Queue** (`observations.dlq`) for manual inspection and recovery.
+
+**Message Flow:**
+```
+Message received (retry_count = 0)
+    ↓
+Processing fails → republish with retry_count = 1
+    ↓
+Processing fails → republish with retry_count = 2
+    ↓
+Processing fails → republish with retry_count = 3
+    ↓
+Max retries exceeded → move to observations.dlq
+```
+
+**DLQ Messages Include:**
+- `x-retry-count` — Number of retry attempts
+- `x-failed-at` — Timestamp of final failure
+- `x-original-routing-key` — Original MQTT topic
+
+### Managing the DLQ
+
+View messages in the DLQ:
+```bash
+python view_dlq.py --count 20
+```
+
+Purge the DLQ:
+```bash
+python view_dlq.py --purge
+```
+
+**Configuration:**
+- `MAX_MESSAGE_RETRIES` — Message-level retries before DLQ (default: 3)
+- `API_MAX_RETRIES` — API request retries per batch (default: 5)
+- `BASE_DELAY` — Initial retry delay in seconds for exponential backoff (default: 5)
+
+---
 
 ## Architecture Decisions
 

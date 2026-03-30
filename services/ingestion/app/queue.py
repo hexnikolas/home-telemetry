@@ -22,8 +22,10 @@ if not RABBITMQ_URL:
     raise ValueError("RABBITMQ_URL environment variable is not set")
 
 QUEUE_NAME = os.getenv("QUEUE_NAME", "observations")
+DLQ_NAME = f"{QUEUE_NAME}.dlq"  # Dead Letter Queue
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "100"))
 BATCH_TIMEOUT = int(os.getenv("BATCH_TIMEOUT", "5"))  # seconds
+MAX_MESSAGE_RETRIES = int(os.getenv("MAX_MESSAGE_RETRIES", "3"))  # Max retries per message
 
 
 class ObservationQueue:
@@ -102,18 +104,58 @@ class ObservationQueue:
             self.pending_ack_messages.clear()
             logger.info(f"[INGESTION] Acknowledged {count} messages")
 
-    async def nack_batch(self, requeue: bool = True):
-        """Reject all pending messages (optionally requeue them)"""
+    async def move_batch_to_dlq(self):
+        """Move all pending messages to DLQ or requeue with incremented retry count"""
         async with self.batch_lock:
             for msg in self.pending_ack_messages:
                 try:
-                    await msg.nack(requeue=requeue)
-                    logger.debug(f"[INGESTION] NACKed message (requeue={requeue})")
+                    # Get current retry count from message headers
+                    retry_count = 0
+                    if msg.headers and "x-retry-count" in msg.headers:
+                        retry_count = int(msg.headers["x-retry-count"])
+                    
+                    if retry_count >= MAX_MESSAGE_RETRIES:
+                        # Max retries exceeded - move to DLQ
+                        await self.channel.default_exchange.publish(
+                            aio_pika.Message(
+                                body=msg.body,
+                                headers={
+                                    "x-retry-count": retry_count,
+                                    "x-failed-at": datetime.utcnow().isoformat(),
+                                    "x-original-routing-key": msg.routing_key,
+                                },
+                                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                            ),
+                            routing_key=DLQ_NAME,
+                        )
+                        # ACK the original message (it's been moved to DLQ)
+                        await msg.ack()
+                        logger.warning(f"[INGESTION] Message moved to DLQ after {retry_count} retries")
+                    else:
+                        # Republish with incremented retry count
+                        await self.channel.default_exchange.publish(
+                            aio_pika.Message(
+                                body=msg.body,
+                                headers={"x-retry-count": retry_count + 1},
+                                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                            ),
+                            routing_key=QUEUE_NAME,
+                        )
+                        # ACK the original message (it's been requeued with new retry count)
+                        await msg.ack()
+                        logger.debug(f"[INGESTION] Message requeued with retry count {retry_count + 1}")
+                        
                 except Exception as e:
-                    logger.error(f"[INGESTION] Failed to NACK message: {e}")
+                    logger.error(f"[INGESTION] Failed to handle failed message: {e}")
+                    # As fallback, NACK to requeue
+                    try:
+                        await msg.nack(requeue=True)
+                    except:
+                        pass
+            
             count = len(self.pending_ack_messages)
             self.pending_ack_messages.clear()
-            logger.info(f"[INGESTION] NACKed {count} messages (requeue={requeue})")
+            logger.info(f"[INGESTION] Processed {count} failed messages (retry or DLQ)")
 
     async def _should_flush(self) -> bool:
         """Check if batch should be flushed based on time or size"""

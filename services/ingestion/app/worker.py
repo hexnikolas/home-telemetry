@@ -29,7 +29,8 @@ REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
 REDIS_URL = os.getenv("REDIS_URL")
 REDIS_TOPIC_CONFIG_KEY = "mqtt:topic_config"
 AUTO_ACK = os.getenv("AUTO_ACK", "false").lower() == "true"
-MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "5"))
+MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "5"))  # API request retries (per batch)
+MAX_MESSAGE_RETRIES = int(os.getenv("MAX_MESSAGE_RETRIES", "3"))  # Message-level retries before DLQ
 BASE_DELAY = int(os.getenv("BASE_DELAY", "5"))
 API_CLIENT_ID = os.getenv("API_CLIENT_ID", "ingestion-worker")
 API_CLIENT_SECRET = os.getenv("API_CLIENT_SECRET", "")
@@ -188,9 +189,9 @@ async def process_messages(messages: List[Dict[str, Any]]):
         await observation_queue.ack_batch()
         logger.info("Batch processed successfully - messages acknowledged and removed from queue")
     else:
-        # NACK messages to requeue them for retry
-        await observation_queue.nack_batch(requeue=True)
-        logger.warning("API request failed - messages NACKed and requeued for retry")
+        # Move failed messages to DLQ or retry with incremented count
+        await observation_queue.move_batch_to_dlq()
+        logger.warning("API request failed - messages will be retried or moved to DLQ")
 
 
 async def send_observations_to_api(observations: List[ObservationWrite]):
@@ -268,6 +269,8 @@ async def main():
     logger.info(f"Auto-Ack: {AUTO_ACK} (if False, messages stay in queue)")
     logger.info(f"Batch Size: {int(os.getenv('BATCH_SIZE', '100'))}")
     logger.info(f"Batch Timeout: {int(os.getenv('BATCH_TIMEOUT', '5'))} seconds")
+    logger.info(f"API Retries: {MAX_RETRIES} attempts per batch")
+    logger.info(f"Message Retries: {MAX_MESSAGE_RETRIES} attempts before DLQ")
     logger.info("=" * 60)
 
     try:

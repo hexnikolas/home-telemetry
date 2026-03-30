@@ -166,6 +166,7 @@ async def process_messages(messages: List[Dict[str, Any]]):
 
             # Call handler to get observations
             obs = await handler(data_payload, datastreams)
+            logger.debug(f"Observations: {obs}")
             observations.extend(obs)
             logger.debug(f"Handler {model} generated {len(obs)} observations")
 

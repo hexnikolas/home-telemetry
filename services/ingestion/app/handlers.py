@@ -17,21 +17,20 @@ Redis setup (via jobs sync job):
          '{"model": "A1T", "datastreams": {"Power": "uuid", "Voltage": "uuid", "Total": "uuid"}}'
 """
 from typing import List, Dict
-from datetime import datetime, timezone
-import pytz
+from datetime import datetime, timezone, timedelta
 from schemas.observation_schemas import ObservationWrite
 
-# Timezone for incoming sensor data
-CET = pytz.timezone('Europe/Paris')  # CET/CEST timezone
+# Fixed UTC+1 offset for incoming sensor data (no DST)
+UTC_PLUS_1 = timezone(timedelta(hours=1))
 
 
 def _parse_time(data: dict) -> datetime:
-    """Parse 'Time' field from sensor payload and convert CET → UTC."""
+    """Parse 'Time' field from sensor payload and convert UTC+1 → UTC."""
     time_str = data.get("Time")
     if time_str:
         try:
             dt = datetime.fromisoformat(time_str)
-            return CET.localize(dt).astimezone(timezone.utc)
+            return dt.replace(tzinfo=UTC_PLUS_1).astimezone(timezone.utc)
         except (ValueError, TypeError):
             pass
     return datetime.now(timezone.utc)

@@ -46,3 +46,11 @@ rules:
     threshold: 100
     priority: 8
     cooldown_minutes: 30
+  # System metric: Dead Letter Queue (DLQ) - alert if any failed messages
+  - type: "system_metric"
+    metric: "rabbitmq_dlq_size"
+    name: "Dead Letter Queue Has Failed Messages"
+    condition: ">"
+    threshold: 0
+    priority: 9  # High priority - messages are failing permanently
+    cooldown_minutes: 60

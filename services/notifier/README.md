@@ -34,6 +34,22 @@ When observations are published to monitored datastream streams, the notifier:
 - Updates heartbeat tracking (last-seen timestamps) to detect offline sensors
 - Evaluates threshold rules to trigger alerts when values exceed configured limits
 
+## System Monitoring
+
+The notifier provides comprehensive system health monitoring:
+
+### Observation Monitoring
+- **Threshold alerts**: Notifies when sensor values exceed configured limits (e.g., high temperature, power usage)
+- **Heartbeat monitoring**: Detects offline sensors when no data received within timeout period
+
+### Infrastructure Monitoring
+- **RabbitMQ queue depth**: Alerts when message queue grows beyond threshold (potential backlog)
+- **Dead Letter Queue (DLQ)**: Alerts when messages fail permanently and move to DLQ (data quality issues)
+- **Docker container health**: Monitors container health status changes
+- **Redis connectivity**: Tracks Redis availability and recovery
+
+All monitoring rules are configured in `rules.yaml` with customizable thresholds, priorities, and cooldown periods.
+
 ## Gotify Notifications
 
 Notifications are delivered using Gotify, a simple server for sending push notifications. The notifier sends HTTP requests to the Gotify server with the relevant alert information, allowing users to receive timely updates on their devices.

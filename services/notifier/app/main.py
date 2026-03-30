@@ -348,6 +348,68 @@ class NotifierService:
             await asyncio.sleep(CHECK_INTERVAL_QUEUE)
 
     # ------------------------------------------------------------------
+    # RabbitMQ DLQ (Dead Letter Queue) monitor
+    # ------------------------------------------------------------------
+    async def monitor_rabbitmq_dlq(self) -> None:
+        """Check the RabbitMQ management API for Dead Letter Queue size."""
+        dlq_rule = next(
+            (
+                r
+                for r in self.rules
+                if r.get("type") == "system_metric"
+                and r.get("metric") == "rabbitmq_dlq_size"
+            ),
+            None,
+        )
+        if dlq_rule is None:
+            logger.debug("No rabbitmq_dlq_size rule — DLQ monitor disabled")
+            return
+
+        threshold = float(dlq_rule.get("threshold", 0))
+        condition = dlq_rule.get("condition", ">")
+        cooldown_min = dlq_rule.get("cooldown_minutes", 60)
+        priority = dlq_rule.get("priority", 9)
+        cooldown_key = "notifier:cooldown:rabbitmq_dlq"
+        dlq_name = f"{RABBITMQ_QUEUE_NAME}.dlq"
+
+        logger.info(
+            f"RabbitMQ DLQ monitor started (threshold: {condition} {threshold})"
+        )
+
+        while True:
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        f"{RABBITMQ_MANAGEMENT_URL}/api/queues/%2F/{dlq_name}",
+                        auth=(RABBITMQ_MANAGEMENT_USER, RABBITMQ_MANAGEMENT_PASS),
+                        timeout=5,
+                    )
+                    resp.raise_for_status()
+                    dlq_size = resp.json().get("messages", 0)
+
+                if _evaluate_condition(dlq_size, condition, threshold):
+                    if not await self._is_in_cooldown(cooldown_key):
+                        logger.error(
+                            f"DLQ threshold breached: {dlq_size} failed messages in Dead Letter Queue"
+                        )
+                        await self.send_alert(
+                            "🚨 Dead Letter Queue Alert",
+                            f"{dlq_rule['name']}: {dlq_size} messages failed permanently and moved to DLQ. "
+                            f"Investigate with: python view_dlq.py",
+                            priority=priority,
+                        )
+                        await self._set_cooldown(cooldown_key, cooldown_min)
+                    else:
+                        logger.debug(f"DLQ alert in cooldown (size: {dlq_size})")
+                else:
+                    logger.debug(f"DLQ OK: {dlq_size} messages")
+
+            except Exception as exc:
+                logger.error(f"RabbitMQ DLQ monitor error: {exc}")
+
+            await asyncio.sleep(CHECK_INTERVAL_QUEUE)
+
+    # ------------------------------------------------------------------
     # Heartbeat (sensor-offline) monitor
     # ------------------------------------------------------------------
     async def monitor_heartbeats(self) -> None:
@@ -465,6 +527,7 @@ class NotifierService:
             asyncio.create_task(self.monitor_redis_health()),
             asyncio.create_task(self.monitor_docker_health()),
             asyncio.create_task(self.monitor_rabbitmq_queue()),
+            asyncio.create_task(self.monitor_rabbitmq_dlq()),
             asyncio.create_task(self.monitor_heartbeats()),
         ]
 

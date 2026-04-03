@@ -10,6 +10,7 @@ import os
 from app.queue import job_queue
 from app.handlers import (
     handle_sync_mqtt_topics_to_redis,
+    handle_fetch_open_meteo_data,
     token_manager
 )
 from logger.logging_config import setup_logging_json, setup_logging_colored
@@ -36,7 +37,8 @@ async def main():
         
         # Register all job handlers
         job_queue.register_handler("sync_mqtt_topics_to_redis", handle_sync_mqtt_topics_to_redis)
-        logger.info("Registered job handlers", extra={"handlers": ["sync_mqtt_topics_to_redis"]})
+        job_queue.register_handler("fetch_open_meteo_data", handle_fetch_open_meteo_data)
+        logger.info("Registered job handlers", extra={"handlers": ["sync_mqtt_topics_to_redis", "fetch_open_meteo_data"]})
 
         # Warm up auth token
         logger.info("Fetching initial API auth token...")

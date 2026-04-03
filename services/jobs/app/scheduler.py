@@ -27,13 +27,25 @@ async def setup_schedules():
     await job_queue.enqueue("sync_mqtt_topics_to_redis", {})
     logger.info("Enqueued immediate sync_mqtt_topics_to_redis job")
 
-    # Example: Scrape energy prices every 30 minutes
+    # Sync MQTT topics every 5 minutes
     await job_queue.schedule_periodic_job(
         job_type="sync_mqtt_topics_to_redis",
         data={},  # No additional data needed for this job
         interval_minutes=5
     )
     logger.info("Scheduled periodic sync_mqtt_topics_to_redis job", extra={"interval_minutes": 5})
+    
+    # Fetch Open Meteo data immediately on startup
+    await job_queue.enqueue("fetch_open_meteo_data", {})
+    logger.info("Enqueued immediate fetch_open_meteo_data job")
+    
+    # Fetch Open Meteo data every 30 minutes
+    await job_queue.schedule_periodic_job(
+        job_type="fetch_open_meteo_data",
+        data={},
+        interval_minutes=30
+    )
+    logger.info("Scheduled periodic fetch_open_meteo_data job", extra={"interval_minutes": 30})
 
 
 async def main():

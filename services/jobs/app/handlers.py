@@ -7,6 +7,7 @@ import json
 from typing import Any, Dict
 import asyncio
 import httpx
+from datetime import datetime, timezone
 from app.queue import job_queue
 from logger.logging_config import logger
 
@@ -14,8 +15,14 @@ from logger.logging_config import logger
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 SYSTEMS_API_URL = f"{API_URL}/api/v1/systems/"
 DATASTREAMS_API_URL = f"{API_URL}/api/v1/datastreams/"
+OBSERVATIONS_API_URL = f"{API_URL}/api/v1/observations/"
 REDIS_TOPIC_CONFIG_KEY = "mqtt:topic_config"
 BATCH_SIZE = 100
+
+# Open Meteo configuration
+OPEN_METEO_API_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_LATITUDE = float(os.getenv("OPEN_METEO_LATITUDE", "37.7749"))
+OPEN_METEO_LONGITUDE = float(os.getenv("OPEN_METEO_LONGITUDE", "-122.4194"))
 
 # Auth configuration
 API_CLIENT_ID = os.getenv("API_CLIENT_ID", "")
@@ -191,5 +198,167 @@ async def handle_process_observations(data: Dict[str, Any]) -> Dict[str, Any]:
         "datastream_id": datastream_id,
         "status": "success"
     }
+
+
+async def handle_fetch_open_meteo_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Fetch current weather data from Open Meteo API and create observations.
+    
+    This job:
+    1. Queries for the "Open Meteo" system dynamically using the q filter
+    2. Fetches its datastreams
+    3. Maps datastreams to temperature, humidity, and dew point properties
+    4. Fetches current weather from Open Meteo
+    5. Creates observations for each datastream
+    
+    data format: {} (empty - uses env variables for location)
+    """
+    logger.info("Starting Open Meteo data fetch job")
+    
+    token = await token_manager.get_token()
+    auth_headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            # 1. Find the Open Meteo system using q filter
+            logger.debug("Querying for Open Meteo system")
+            sys_response = await client.get(
+                SYSTEMS_API_URL,
+                params={"q": "Open Meteo", "limit": 10},
+                headers=auth_headers,
+            )
+            sys_response.raise_for_status()
+            systems = sys_response.json()
+            
+            if not systems:
+                logger.error("Open Meteo system not found")
+                return {"status": "error", "message": "Open Meteo system not found"}
+            
+            system = systems[0]
+            system_id = system["id"]
+            logger.info("Found Open Meteo system", extra={"system_id": system_id})
+            
+            # 2. Get datastreams for this system
+            logger.debug("Fetching datastreams for system", extra={"system_id": system_id})
+            ds_response = await client.get(
+                DATASTREAMS_API_URL,
+                params={"system_id": system_id, "limit": 100},
+                headers=auth_headers,
+            )
+            ds_response.raise_for_status()
+            datastreams = ds_response.json()
+            
+            if not datastreams:
+                logger.error("No datastreams found for Open Meteo system")
+                return {"status": "error", "message": "No datastreams found"}
+            
+            # 3. Map datastreams by name
+            ds_mapping = {}
+            for ds in datastreams:
+                name_lower = ds["name"].lower()
+                if "temperature" in name_lower:
+                    ds_mapping["temperature"] = ds
+                elif "humidity" in name_lower:
+                    ds_mapping["humidity"] = ds
+                elif "dew" in name_lower and "point" in name_lower:
+                    ds_mapping["dew_point"] = ds
+            
+            logger.info(
+                "Mapped datastreams",
+                extra={
+                    "temperature": ds_mapping.get("temperature", {}).get("id"),
+                    "humidity": ds_mapping.get("humidity", {}).get("id"),
+                    "dew_point": ds_mapping.get("dew_point", {}).get("id"),
+                }
+            )
+            
+            # 4. Fetch current weather from Open Meteo
+            logger.debug(
+                "Fetching Open Meteo data",
+                extra={"latitude": OPEN_METEO_LATITUDE, "longitude": OPEN_METEO_LONGITUDE}
+            )
+            weather_response = await client.get(
+                OPEN_METEO_API_URL,
+                params={
+                    "latitude": OPEN_METEO_LATITUDE,
+                    "longitude": OPEN_METEO_LONGITUDE,
+                    "current": "temperature_2m,relative_humidity_2m,dew_point_2m",
+                    "timezone": "auto"
+                }
+            )
+            weather_response.raise_for_status()
+            weather_data = weather_response.json()
+            
+            current = weather_data.get("current", {})
+            logger.info(
+                "Fetched Open Meteo data",
+                extra={
+                    "temperature": current.get("temperature_2m"),
+                    "humidity": current.get("relative_humidity_2m"),
+                    "dew_point": current.get("dew_point_2m"),
+                }
+            )
+            
+            # 5. Create observations for each datastream
+            current_time = datetime.now(timezone.utc).isoformat()
+            observations_payload = []
+            
+            # Temperature observation
+            if "temperature" in ds_mapping and current.get("temperature_2m") is not None:
+                temp_value = current["temperature_2m"]
+                observations_payload.append({
+                    "datastream_id": ds_mapping["temperature"]["id"],
+                    "result_time": current_time,
+                    "result_numeric": temp_value
+                })
+                logger.debug("Prepared temperature observation", extra={"value": temp_value})
+            
+            # Humidity observation
+            if "humidity" in ds_mapping and current.get("relative_humidity_2m") is not None:
+                humidity_value = current["relative_humidity_2m"]
+                observations_payload.append({
+                    "datastream_id": ds_mapping["humidity"]["id"],
+                    "result_time": current_time,
+                    "result_numeric": humidity_value
+                })
+                logger.debug("Prepared humidity observation", extra={"value": humidity_value})
+            
+            # Dew point observation
+            if "dew_point" in ds_mapping and current.get("dew_point_2m") is not None:
+                dew_point_value = current["dew_point_2m"]
+                observations_payload.append({
+                    "datastream_id": ds_mapping["dew_point"]["id"],
+                    "result_time": current_time,
+                    "result_numeric": dew_point_value
+                })
+                logger.debug("Prepared dew point observation", extra={"value": dew_point_value})
+            
+            # Create all observations in bulk
+            if observations_payload:
+                logger.debug("Creating observations in bulk", extra={"count": len(observations_payload)})
+                obs_resp = await client.post(
+                    f"{OBSERVATIONS_API_URL}bulk",
+                    json=observations_payload,
+                    headers=auth_headers,
+                )
+                obs_resp.raise_for_status()
+                observations_created = len(observations_payload)
+                logger.info("Open Meteo data fetch job complete", extra={"observations_created": observations_created})
+            else:
+                logger.warning("No observations to create (no data available from Open Meteo)")
+                observations_created = 0
+            
+            return {
+                "status": "success",
+                "observations_created": observations_created,
+                "system_id": system_id
+            }
+    
+    except httpx.HTTPError as e:
+        logger.error("HTTP error during Open Meteo fetch", extra={"error": str(e)})
+        raise
+    except Exception as e:
+        logger.error("Unexpected error during Open Meteo fetch", extra={"error": str(e)})
+        raise
 
 

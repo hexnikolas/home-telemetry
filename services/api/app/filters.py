@@ -1,5 +1,5 @@
-from sqlalchemy import Select
-from typing import Any
+from sqlalchemy import Select, or_
+from typing import Any, Optional
 from datetime import datetime, timezone
 from fastapi import HTTPException
 
@@ -97,3 +97,33 @@ def apply_time_range(stmt: Select, column, time_start: datetime, time_end: datet
     if time_end is not None:
         stmt = stmt.where(column <= time_end)
     return stmt
+
+
+def filter_by_keywords(query: Select, model, q: Optional[str]) -> Select:
+    """
+    Filter by keyword search on name and description fields.
+
+    Args:
+        query: The base SQLAlchemy select statement.
+        model: The SQLAlchemy model class to filter on.
+        q: Comma-separated keywords. If None, returns query unchanged.
+           Each keyword is matched against name and description (case-insensitive).
+
+    Returns:
+        The select statement with keyword filters applied using OR logic.
+
+    Example:
+        query = select(System)
+        query = filter_by_keywords(query, System, "weather,outdoor")
+    """
+    if not q:
+        return query
+
+    keyword_filters = []
+    keywords = [kw.strip() for kw in q.split(",") if kw.strip()]
+    for kw in keywords:
+        ilike_pattern = f"%{kw}%"
+        keyword_filters.append(model.name.ilike(ilike_pattern))
+        keyword_filters.append(model.description.ilike(ilike_pattern))
+
+    return query.where(or_(*keyword_filters))

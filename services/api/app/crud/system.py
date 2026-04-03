@@ -4,6 +4,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy import desc
 from app.models import System, SystemTypes, Observation
+from app.filters import filter_by_keywords
 from fastapi import HTTPException
 from uuid import UUID
 from typing import List, Optional
@@ -29,13 +30,17 @@ async def get_all_systems(
     db: AsyncSession,
     limit: int = 50,
     offset: int = 0,
-    system_type: Optional[SystemTypes] = None
+    system_type: Optional[SystemTypes] = None,
+    q: Optional[str] = None
 ) -> List[System]:
-    """Get all systems with pagination and optional system_type filter."""
+    """Get all systems with pagination, optional system_type filter, and keyword search."""
     statement = select(System)
 
     if system_type is not None:
         statement = statement.where(System.system_type == system_type)
+
+    if q is not None:
+        statement = filter_by_keywords(statement, System, q)
 
     statement = statement.limit(limit).offset(offset)
     result = await db.execute(statement)

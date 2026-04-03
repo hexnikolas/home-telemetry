@@ -23,9 +23,10 @@ async def read_systems(
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    system_type: Optional[SystemTypes] = Query(None, description="Filter by system type")
+    system_type: Optional[SystemTypes] = Query(None, description="Filter by system type"),
+    q: Optional[str] = Query(None, description="Keyword search (comma-separated) on name and description")
 ):
-    systems_data = await get_all_systems(db, limit=limit, offset=offset, system_type=system_type)
+    systems_data = await get_all_systems(db, limit=limit, offset=offset, system_type=system_type, q=q)
     return [SystemRead(**system.__dict__) for system in systems_data]
 
 @router.get("/{system_id}", summary="Get System by ID", status_code=status.HTTP_200_OK, response_model=SystemRead, dependencies=[Depends(require_scope("systems:read"))])

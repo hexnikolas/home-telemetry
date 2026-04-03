@@ -296,3 +296,73 @@ async def test_get_system_status(client):
     status_response = await client.get(f"/api/v1/systems/{system_id}/status?online_within_seconds=4")
     assert status_response.status_code == 200
     assert status_response.json() is False
+
+
+async def test_list_systems_with_keyword_filter(client):
+    # Create systems with different names and descriptions
+    system_1 = {
+        "name": "Weather Station Indoor",
+        "description": "Indoor temperature and humidity sensor",
+        "system_type": "SENSOR",
+        "external_id": str(uuid4()),
+        "is_mobile": False,
+        "is_gps_enabled": False,
+        "serial_number": "WS-001"
+    }
+    response_1 = await client.post("/api/v1/systems/", json=system_1)
+    assert response_1.status_code == 201
+
+    system_2 = {
+        "name": "Power Socket Plug",
+        "description": "Smart plug measuring energy consumption",
+        "system_type": "SENSOR",
+        "external_id": str(uuid4()),
+        "is_mobile": False,
+        "is_gps_enabled": False,
+        "serial_number": "PSP-001"
+    }
+    response_2 = await client.post("/api/v1/systems/", json=system_2)
+    assert response_2.status_code == 201
+
+    system_3 = {
+        "name": "Outdoor Weather Monitor",
+        "description": "Monitors outdoor environmental conditions",
+        "system_type": "SENSOR",
+        "external_id": str(uuid4()),
+        "is_mobile": False,
+        "is_gps_enabled": False,
+        "serial_number": "OWM-001"
+    }
+    response_3 = await client.post("/api/v1/systems/", json=system_3)
+    assert response_3.status_code == 201
+
+    # Test single keyword matching in name
+    response = await client.get("/api/v1/systems/?q=weather&limit=100")
+    assert response.status_code == 200
+    systems = response.json()
+    system_names = [s["name"] for s in systems]
+    assert "Weather Station Indoor" in system_names
+    assert "Outdoor Weather Monitor" in system_names
+    assert "Power Socket Plug" not in system_names
+
+    # Test keyword matching in description
+    response = await client.get("/api/v1/systems/?q=energy&limit=100")
+    assert response.status_code == 200
+    systems = response.json()
+    system_names = [s["name"] for s in systems]
+    assert "Power Socket Plug" in system_names
+    assert len(systems) == 1
+
+    # Test multiple keywords (OR logic)
+    response = await client.get("/api/v1/systems/?q=weather,energy&limit=100")
+    assert response.status_code == 200
+    systems = response.json()
+    system_names = [s["name"] for s in systems]
+    assert "Weather Station Indoor" in system_names
+    assert "Outdoor Weather Monitor" in system_names
+    assert "Power Socket Plug" in system_names
+    assert len(systems) == 3
+
+    # Test keyword with no matches
+    response = await client.get("/api/v1/systems/?q=nonexistent&limit=100")
+    assert response.status_code == 404

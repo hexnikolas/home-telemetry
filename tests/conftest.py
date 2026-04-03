@@ -6,7 +6,27 @@ from sqlalchemy.pool import NullPool
 from app.models import Base
 from app.database import init_engine
 from app.main import app
+from app.auth.jwt import create_access_token
 from sqlalchemy import text
+
+# ────────────────────────────────────────────────────────────────────────────────
+# All scopes required by the API
+# ────────────────────────────────────────────────────────────────────────────────
+ALL_REQUIRED_SCOPES = [
+    "systems:read",
+    "systems:write",
+    "deployments:read",
+    "deployments:write",
+    "procedures:read",
+    "procedures:write",
+    "observations:read",
+    "observations:write",
+    "datastreams:read",
+    "datastreams:write",
+    "properties:read",
+    "properties:write",
+]
+
 
 @pytest.fixture(scope="session")
 def postgres_container():
@@ -39,6 +59,18 @@ async def setup_tables(db_url):
 
 
 @pytest.fixture(scope="session")
-async def client():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+def valid_token():
+    """Generate a JWT token with all required scopes for testing."""
+    return create_access_token(client_id="test-client", scopes=ALL_REQUIRED_SCOPES)
+
+
+@pytest.fixture(scope="session")
+async def client(valid_token):
+    """Create a test client with valid authentication token."""
+    headers = {"Authorization": f"Bearer {valid_token}"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers=headers,
+    ) as ac:
         yield ac

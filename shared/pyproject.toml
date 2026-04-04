@@ -1,18 +1,17 @@
-[project]
+[tool.poetry]
 name = "shared"
 version = "0.1.0"
 description = "Shared schemas & utilities for Home‑Telemetry"
-requires-python = ">=3.10"
-dependencies = [
-    "pydantic>=2.7",
-    "loguru>=0.7.2,<1.0.0",
+authors = ["Nikos <nikos.zacharatos@iccs.gr>"]
+packages = [
+    { include = "logger" },
+    { include = "schemas" }
 ]
 
-[tool.poetry]
-packages = [
-    { include = "schemas" },
-    { include = "logger" }
-]
+[tool.poetry.dependencies]
+python = ">=3.10"
+pydantic = ">=2.7"
+loguru = ">=0.7.2,<1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

@@ -5,7 +5,7 @@ Collects messages from queue and batches them for bulk API submission
 import json
 import asyncio
 from typing import List, Callable, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import aio_pika
 import os
 from shared.logger.logging_config import setup_logging_json, setup_logging_colored
@@ -41,7 +41,7 @@ class ObservationQueue:
         self.batch_messages: List[aio_pika.IncomingMessage] = []  # Track original message objects
         self.pending_ack_messages: List[aio_pika.IncomingMessage] = []  # Messages waiting to be acknowledged
         self.batch_lock = asyncio.Lock()
-        self.last_flush = datetime.utcnow()
+        self.last_flush = datetime.now(timezone.utc)
 
     async def connect(self):
         """Initialize RabbitMQ connection"""
@@ -121,7 +121,7 @@ class ObservationQueue:
                                 body=msg.body,
                                 headers={
                                     "x-retry-count": retry_count,
-                                    "x-failed-at": datetime.utcnow().isoformat(),
+                                    "x-failed-at": datetime.now(timezone.utc).isoformat(),
                                     "x-original-routing-key": msg.routing_key,
                                 },
                                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
@@ -162,7 +162,7 @@ class ObservationQueue:
         if not self.batch:
             return False
         
-        time_since_last_flush = (datetime.utcnow() - self.last_flush).total_seconds()
+        time_since_last_flush = (datetime.now(timezone.utc) - self.last_flush).total_seconds()
         return time_since_last_flush >= BATCH_TIMEOUT or len(self.batch) >= BATCH_SIZE
 
     async def _flush_batch(self):
@@ -179,7 +179,7 @@ class ObservationQueue:
             messages_to_ack = self.batch_messages.copy()
             self.batch.clear()
             self.batch_messages.clear()
-            self.last_flush = datetime.utcnow()
+            self.last_flush = datetime.now(timezone.utc)
             
             # Move messages to pending BEFORE calling handler (so ack_batch() has them available)
             self.pending_ack_messages.extend(messages_to_ack)

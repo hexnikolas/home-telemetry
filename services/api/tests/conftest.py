@@ -47,6 +47,7 @@ def init_test_engine(db_url):
 
 
 @pytest.fixture(autouse=True)
+@pytest.mark.asyncio
 async def setup_tables(db_url):
     engine = create_async_engine(db_url, poolclass=NullPool)
     async with engine.begin() as conn:
@@ -64,7 +65,8 @@ def valid_token():
     return create_access_token(client_id="test-client", scopes=ALL_REQUIRED_SCOPES)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
+@pytest.mark.asyncio
 async def client(valid_token):
     """Create a test client with valid authentication token."""
     headers = {"Authorization": f"Bearer {valid_token}"}

@@ -5,12 +5,13 @@ Usage:
     arq app.worker.WorkerSettings
 """
 import os
+import asyncio
 from arq.connections import RedisSettings
 from app.handlers import (
     handle_sync_mqtt_topics_to_redis,
     handle_fetch_open_meteo_data,
 )
-from app.scheduler import sync_mqtt_cron, fetch_meteo_cron
+from app.scheduler import sync_mqtt_cron, fetch_meteo_cron, publish_schedules_to_redis
 from logger.logging_config import setup_logging_json, setup_logging_colored
 
 # Initialize logging
@@ -31,6 +32,12 @@ redis_host = parsed.hostname or "localhost"
 redis_port = parsed.port or 6379
 redis_db = int(parsed.path.lstrip("/") or "0")
 redis_password = parsed.password
+
+
+async def startup(ctx):
+    """Publish job schedules to Redis on worker startup"""
+    await publish_schedules_to_redis()
+    logger.info("Published job schedules to Redis")
 
 
 class WorkerSettings:
@@ -54,10 +61,11 @@ class WorkerSettings:
         fetch_meteo_cron,
     ]
     
-    on_startup = None
+    on_startup = startup
     on_shutdown = None
     
     # Worker settings
     job_timeout = 600  # 10 minutes
     keep_result = 86400  # Keep results for 24 hours
     allow_abort_jobs = True
+

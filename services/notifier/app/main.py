@@ -47,7 +47,6 @@ HEALTHCHECKED_CONTAINERS: set[str] = {
     "home-telemetry-rabbitmq",
     "home-telemetry-ingestion-worker",
     "home-telemetry-jobs-worker",
-    "home-telemetry-jobs-scheduler",
     "redis",
 }
 
@@ -56,7 +55,6 @@ HEALTHCHECKED_CONTAINERS: set[str] = {
 REDIS_DEPENDENT: set[str] = {
     "home-telemetry-ingestion-worker",
     "home-telemetry-jobs-worker",
-    "home-telemetry-jobs-scheduler",
 }
 
 

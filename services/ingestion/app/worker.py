@@ -256,6 +256,46 @@ async def send_observations_to_api(observations: List[ObservationWrite]):
     return False
 
 
+async def refresh_topic_config():
+    """
+    Periodically refresh topic config from Redis.
+    This allows the worker to pick up new sensors or removed sensors
+    without requiring a restart.
+    """
+    global redis_client, topic_config_map
+    
+    refresh_interval = int(os.getenv("TOPIC_CONFIG_REFRESH_INTERVAL", "300"))  # Default 300 seconds
+    
+    while True:
+        try:
+            await asyncio.sleep(refresh_interval)
+            
+            if not redis_client:
+                logger.warning("Redis client not available for config refresh")
+                continue
+            
+            raw_configs = await redis_client.hgetall(REDIS_TOPIC_CONFIG_KEY)
+            new_config_map = {topic: json.loads(cfg) for topic, cfg in raw_configs.items()}
+            
+            # Only log if config changed
+            if new_config_map != topic_config_map:
+                old_topics = set(topic_config_map.keys())
+                new_topics = set(new_config_map.keys())
+                added = new_topics - old_topics
+                removed = old_topics - new_topics
+                
+                if added:
+                    logger.info(f"Added topics: {added}")
+                if removed:
+                    logger.info(f"Removed topics: {removed}")
+                
+                topic_config_map = new_config_map
+                logger.info(f"Topic config refreshed: now have {len(topic_config_map)} topics")
+            
+        except Exception as e:
+            logger.error(f"Error refreshing topic config: {e}")
+
+
 async def main():
     """Main worker entry point"""
     global redis_client, topic_config_map
@@ -271,6 +311,7 @@ async def main():
     logger.info(f"Batch Timeout: {int(os.getenv('BATCH_TIMEOUT', '5'))} seconds")
     logger.info(f"API Retries: {MAX_RETRIES} attempts per batch")
     logger.info(f"Message Retries: {MAX_MESSAGE_RETRIES} attempts before DLQ")
+    logger.info(f"Topic Config Refresh: every {int(os.getenv('TOPIC_CONFIG_REFRESH_INTERVAL', '300'))} seconds")
     logger.info("=" * 60)
 
     try:
@@ -303,6 +344,9 @@ async def main():
 
         logger.info("Starting message consumption...")
         logger.info("Waiting for messages...")
+        
+        # Start background task to refresh topic config periodically
+        refresh_task = asyncio.create_task(refresh_topic_config())
         
         # Start consuming messages (blocks indefinitely)
         await observation_queue.start_consuming()

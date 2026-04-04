@@ -536,7 +536,7 @@ class NotifierService:
                             await self.send_alert(
                                 "✅ System Online",
                                 f"'{system_name}' is now sending observations",
-                                priority=5,
+                                priority=7,
                             )
                         else:
                             # Already online

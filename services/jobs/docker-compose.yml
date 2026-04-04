@@ -6,32 +6,14 @@ services:
     container_name: home-telemetry-jobs-worker
     env_file:
       - .env
-    command: python -m app.worker
+    # arq handles both job processing and cron scheduling
+    command: arq app.worker.WorkerSettings
     deploy:
       replicas: 1
     volumes:
       - ./app:/app/app
     healthcheck:
-      test: ["CMD", "python", "-c", "import redis; r = redis.from_url('redis://redis:6379/0'); r.ping()"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    networks:
-      - home-telemetry
-    restart: unless-stopped
-
-  jobs-scheduler:
-    build:
-      context: ../../
-      dockerfile: services/jobs/Dockerfile
-    container_name: home-telemetry-jobs-scheduler
-    env_file:
-      - .env
-    command: python -m app.scheduler
-    volumes:
-      - ./app:/app/app
-    healthcheck:
-      test: ["CMD", "python", "-c", "import redis; r = redis.from_url('redis://redis:6379/0'); r.ping()"]
+      test: ["CMD", "python", "-c", "import redis; r = redis.from_url('${REDIS_URL:-redis://redis:6379/0}'); r.ping()"]
       interval: 10s
       timeout: 5s
       retries: 3

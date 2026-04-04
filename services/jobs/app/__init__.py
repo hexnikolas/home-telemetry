@@ -1,5 +1,5 @@
-"""Job queue module"""
+"""Job queue module - uses arq for async job processing"""
 
-from .queue import JobQueue, Job, JobStatus, job_queue
+from .queue import get_redis_settings, get_redis_pool
 
-__all__ = ["JobQueue", "Job", "JobStatus", "job_queue"]
+__all__ = ["get_redis_settings", "get_redis_pool"]

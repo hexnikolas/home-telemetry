@@ -1,85 +1,34 @@
 """
-Standalone scheduler service for periodic jobs
+Cron jobs configuration for arq
 
-Usage:
-    python -m app.scheduler
+The cron jobs defined here will be executed automatically by the worker
+when running with arq scheduler support.
+
+For development/standalone use, you can also invoke these directly:
+    from arq.cron import cron
+    from app.handlers import handle_sync_mqtt_topics_to_redis, handle_fetch_open_meteo_data
+    from app.worker import WorkerSettings
+
+    WorkerSettings.cron_jobs = [
+        cron(handle_sync_mqtt_topics_to_redis, run_at_startup=True, minute=set(range(0, 60, 5))),  # Every 5 min
+        cron(handle_fetch_open_meteo_data, run_at_startup=True, minute={0, 30}),  # Every 30 min
+    ]
 """
-import asyncio
-import sys
-import os
-from app.queue import job_queue
-from logger.logging_config import setup_logging_json, setup_logging_colored
 
-# Initialize logging
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-LOG_FORMAT = os.getenv("LOG_FORMAT", "json").lower()
-if LOG_FORMAT == "colored":
-    logger = setup_logging_colored("home-telemetry-jobs-scheduler", level=LOG_LEVEL)
-else:
-    logger = setup_logging_json("home-telemetry-jobs-scheduler", level=LOG_LEVEL)
+from arq.cron import cron
+from app.handlers import handle_sync_mqtt_topics_to_redis, handle_fetch_open_meteo_data
 
+# Define cron jobs
+# Sync MQTT topics every 5 minutes
+sync_mqtt_cron = cron(
+    handle_sync_mqtt_topics_to_redis,
+    run_at_startup=True,
+    minute=set(range(0, 60, 5)),  # Every 5 minutes: 0, 5, 10, 15, ...
+)
 
-async def setup_schedules():
-    """Set up all recurring schedules here"""
-    logger.info("Setting up periodic job schedules")
-    
-    # Run immediately on startup
-    await job_queue.enqueue("sync_mqtt_topics_to_redis", {})
-    logger.info("Enqueued immediate sync_mqtt_topics_to_redis job")
-
-    # Sync MQTT topics every 5 minutes
-    await job_queue.schedule_periodic_job(
-        job_type="sync_mqtt_topics_to_redis",
-        data={},  # No additional data needed for this job
-        interval_minutes=5
-    )
-    logger.info("Scheduled periodic sync_mqtt_topics_to_redis job", extra={"interval_minutes": 5})
-    
-    # Fetch Open Meteo data immediately on startup
-    await job_queue.enqueue("fetch_open_meteo_data", {})
-    logger.info("Enqueued immediate fetch_open_meteo_data job")
-    
-    # Fetch Open Meteo data every 30 minutes
-    await job_queue.schedule_periodic_job(
-        job_type="fetch_open_meteo_data",
-        data={},
-        interval_minutes=30
-    )
-    logger.info("Scheduled periodic fetch_open_meteo_data job", extra={"interval_minutes": 30})
-
-
-async def main():
-    logger.info("=" * 50)
-    logger.info("Starting Scheduler Service")
-    logger.info("=" * 50)
-    
-    try:
-        # Connect to Redis
-        logger.info("Connecting to Redis...")
-        await job_queue.connect()
-        logger.info("Connected to Redis")
-        
-        # Set up all periodic jobs
-        await setup_schedules()
-        
-        logger.info("Starting scheduler loop...")
-        
-        # Start scheduler loop (blocks indefinitely)
-        await job_queue.scheduler_loop()
-        
-    except KeyboardInterrupt:
-        logger.info("Shutdown signal received (KeyboardInterrupt)")
-    except Exception as e:
-        logger.error("Fatal error in scheduler", extra={"error": str(e)})
-        sys.exit(1)
-    finally:
-        try:
-            await job_queue.disconnect()
-            logger.info("Disconnected from Redis")
-        except Exception as e:
-            logger.error("Error disconnecting from Redis", extra={"error": str(e)})
-        logger.info("Scheduler cleanup complete")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# Fetch Open Meteo data every 30 minutes
+fetch_meteo_cron = cron(
+    handle_fetch_open_meteo_data,
+    run_at_startup=True,
+    minute={0, 30},  # At 0 and 30 minutes of each hour
+)

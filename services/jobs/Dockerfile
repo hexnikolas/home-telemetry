@@ -20,5 +20,5 @@ RUN rm -f poetry.lock && poetry install --only main
 # Copy application code
 COPY services/jobs/app/ app/
 
-# Default to worker, can be overridden for scheduler
-CMD ["python", "-m", "app.worker"]
+# Run arq worker with built-in scheduler and cron job support
+CMD ["arq", "app.worker.WorkerSettings"]

@@ -1,18 +1,16 @@
 """
-Standalone background worker service
+Standalone background worker service using arq
 
 Usage:
-    python -m app.worker
+    arq app.worker.WorkerSettings
 """
-import asyncio
-import sys
 import os
-from app.queue import job_queue
+from arq.connections import RedisSettings
 from app.handlers import (
     handle_sync_mqtt_topics_to_redis,
     handle_fetch_open_meteo_data,
-    token_manager
 )
+from app.scheduler import sync_mqtt_cron, fetch_meteo_cron
 from logger.logging_config import setup_logging_json, setup_logging_colored
 
 # Initialize logging
@@ -24,45 +22,42 @@ else:
     logger = setup_logging_json("home-telemetry-jobs-worker", level=LOG_LEVEL)
 
 
-async def main():
-    logger.info("=" * 50)
-    logger.info("Starting Background Worker Service")
-    logger.info("=" * 50)
+# Parse Redis URL
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+from urllib.parse import urlparse
+
+parsed = urlparse(REDIS_URL)
+redis_host = parsed.hostname or "localhost"
+redis_port = parsed.port or 6379
+redis_db = int(parsed.path.lstrip("/") or "0")
+redis_password = parsed.password
+
+
+class WorkerSettings:
+    """arq worker configuration"""
     
-    try:
-        # Connect to Redis
-        logger.info("Connecting to Redis...")
-        await job_queue.connect()
-        logger.info("Connected to Redis")
-        
-        # Register all job handlers
-        job_queue.register_handler("sync_mqtt_topics_to_redis", handle_sync_mqtt_topics_to_redis)
-        job_queue.register_handler("fetch_open_meteo_data", handle_fetch_open_meteo_data)
-        logger.info("Registered job handlers", extra={"handlers": ["sync_mqtt_topics_to_redis", "fetch_open_meteo_data"]})
-
-        # Warm up auth token
-        logger.info("Fetching initial API auth token...")
-        await token_manager.get_token()
-        logger.info("API auth token ready")
-        
-        logger.info("Starting worker job processing loop...")
-        
-        # Start worker loop (blocks indefinitely)
-        await job_queue.process_jobs()
-        
-    except KeyboardInterrupt:
-        logger.info("Shutdown signal received (KeyboardInterrupt)")
-    except Exception as e:
-        logger.error("Fatal error in worker", extra={"error": str(e)})
-        sys.exit(1)
-    finally:
-        try:
-            await job_queue.disconnect()
-            logger.info("Disconnected from Redis")
-        except Exception as e:
-            logger.error("Error disconnecting from Redis", extra={"error": str(e)})
-        logger.info("Worker cleanup complete")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    redis_settings = RedisSettings(
+        host=redis_host,
+        port=redis_port,
+        database=redis_db,
+        password=redis_password,
+    )
+    
+    functions = [
+        handle_sync_mqtt_topics_to_redis,
+        handle_fetch_open_meteo_data,
+    ]
+    
+    # Cron jobs for periodic tasks
+    cron_jobs = [
+        sync_mqtt_cron,
+        fetch_meteo_cron,
+    ]
+    
+    on_startup = None
+    on_shutdown = None
+    
+    # Worker settings
+    job_timeout = 600  # 10 minutes
+    keep_result = 86400  # Keep results for 24 hours
+    allow_abort_jobs = True

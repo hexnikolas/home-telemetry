@@ -4,11 +4,10 @@ Job handlers for background tasks
 import os
 import time
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import asyncio
 import httpx
 from datetime import datetime, timezone
-from app.queue import job_queue
 from logger.logging_config import logger
 
 # Configuration
@@ -49,7 +48,7 @@ class TokenManager:
         return self._token
 
     async def _fetch(self) -> None:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 API_TOKEN_URL,
                 data={
@@ -69,7 +68,7 @@ class TokenManager:
 token_manager = TokenManager()
 
 
-async def handle_sync_mqtt_topics_to_redis(data: Dict[str, Any]) -> None:
+async def handle_sync_mqtt_topics_to_redis(ctx, data: Optional[Dict[str, Any]] = None) -> None:
     """
     Fetch all SENSOR systems and their datastreams via the API.
 
@@ -81,7 +80,7 @@ async def handle_sync_mqtt_topics_to_redis(data: Dict[str, Any]) -> None:
     hardcoded UUIDs.
     """
     logger.info("Starting MQTT topic sync job")
-    redis = job_queue.redis
+    redis = ctx["redis"] if ctx else None
 
     offset = 0
     total_topics = 0
@@ -90,7 +89,7 @@ async def handle_sync_mqtt_topics_to_redis(data: Dict[str, Any]) -> None:
     token = await token_manager.get_token()
     auth_headers = {"Authorization": f"Bearer {token}"}
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         while True:
             try:
                 logger.debug("Fetching systems from API", extra={"offset": offset, "limit": BATCH_SIZE})
@@ -174,7 +173,7 @@ async def handle_sync_mqtt_topics_to_redis(data: Dict[str, Any]) -> None:
         logger.warning("No valid topics found — Redis not updated")
 
 # Example: Data processing job
-async def handle_process_observations(data: Dict[str, Any]) -> Dict[str, Any]:
+async def handle_process_observations(ctx, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Example job for processing observations in bulk.
     
@@ -184,6 +183,8 @@ async def handle_process_observations(data: Dict[str, Any]) -> Dict[str, Any]:
         "end_time": "2024-03-06T23:59:59Z"
     }
     """
+    if data is None:
+        data = {}
     datastream_id = data.get('datastream_id')
     logger.info("Processing observations", extra={"datastream_id": datastream_id})
     
@@ -200,7 +201,7 @@ async def handle_process_observations(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def handle_fetch_open_meteo_data(data: Dict[str, Any]) -> Dict[str, Any]:
+async def handle_fetch_open_meteo_data(ctx, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Fetch current weather data from Open Meteo API and create observations.
     
@@ -213,13 +214,15 @@ async def handle_fetch_open_meteo_data(data: Dict[str, Any]) -> Dict[str, Any]:
     
     data format: {} (empty - uses env variables for location)
     """
+    if data is None:
+        data = {}
     logger.info("Starting Open Meteo data fetch job")
     
     token = await token_manager.get_token()
     auth_headers = {"Authorization": f"Bearer {token}"}
     
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             # 1. Find the Open Meteo system using q filter
             logger.debug("Querying for Open Meteo system")
             sys_response = await client.get(

@@ -13,6 +13,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 async def get_redis():
     return await aioredis.from_url(REDIS_URL, decode_responses=True)
 
+
 @router.get("/", dependencies=[Depends(require_scope("admin:read"))])
 async def list_jobs(limit: int = 20):
     """List all enqueued and processed jobs from Redis"""
@@ -45,29 +46,30 @@ async def list_jobs(limit: int = 20):
 
 @router.get("/schedules", dependencies=[Depends(require_scope("admin:read"))])
 async def list_schedules():
-    """List all periodic job schedules"""
+    """List job schedules from Redis"""
     redis = await get_redis()
     try:
-        # Get all schedule keys from the sorted set
-        schedule_keys = await redis.zrange("schedules", 0, -1)
-        
+        schedule_keys = await redis.keys("job:schedule:*")
         schedules = []
-        for key in schedule_keys:
-            data = await redis.hgetall(f"schedule:{key}")
-            if data:
-                if "data" in data:
-                    try:
-                        data["data"] = json.loads(data["data"])
-                    except: pass
-                # Add next run timestamp from the sorted set
-                score = await redis.zscore("schedules", key)
-                data["next_run_timestamp"] = score
-                data["job_id"] = key  # 👈 add this
-                schedules.append(data)
         
-        return schedules
+        for key in schedule_keys:
+            job_name = key.replace("job:schedule:", "")
+            data = await redis.hgetall(key)
+            
+            minutes = json.loads(data.get("minute", "[]"))
+            run_at_startup = data.get("run_at_startup", "False") == "True"
+            
+            schedules.append({
+                "job_name": job_name,
+                "handler": data.get("handler", "unknown"),
+                "minute": minutes,
+                "run_at_startup": run_at_startup,
+            })
+        
+        return {"schedules": schedules}
     finally:
         await redis.close()
+
 
 @router.get("/{job_id}", dependencies=[Depends(require_scope("admin:read"))])
 async def get_job_details(job_id: str):

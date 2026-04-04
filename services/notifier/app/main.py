@@ -14,6 +14,9 @@ from logger.logging_config import setup_logging_json, setup_logging_colored
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 GOTIFY_URL = os.getenv("GOTIFY_URL", "http://gotify:80")
 GOTIFY_TOKEN = os.getenv("GOTIFY_TOKEN", "")
+API_URL = os.getenv("API_URL", "http://api:8000")
+API_CLIENT_ID = os.getenv("API_CLIENT_ID", "notifier")
+API_CLIENT_SECRET = os.getenv("API_CLIENT_SECRET", "notifier-secret")
 # Note: We now subscribe to specific datastream:{uuid} streams instead of a global stream
 CONSUMER_GROUP = "notifier-group"
 CONSUMER_NAME = "notifier-1"
@@ -88,6 +91,13 @@ class NotifierService:
 
         # Docker state tracking  (container_name -> last known health string)
         self.container_health: dict[str, str] = {}
+        
+        # Track which systems are currently offline to avoid alert spam
+        self.offline_systems: set[str] = set()
+        
+        # API token cache
+        self.api_token: str | None = None
+        self.api_token_expiry: float = 0.0
 
     # ------------------------------------------------------------------
     # Setup helpers
@@ -163,6 +173,39 @@ class NotifierService:
             logger.info(f"Alert sent: {title}")
         except Exception as exc:
             logger.error(f"Failed to send alert: {exc}")
+
+    # ------------------------------------------------------------------
+    # API Authentication
+    # ------------------------------------------------------------------
+    async def _get_api_token(self) -> str | None:
+        """Get or refresh API access token for authenticated requests."""
+        import time
+        
+        now = time.time()
+        # Reuse token if still valid (with 30-second safety margin)
+        if self.api_token and now < self.api_token_expiry - 30:
+            return self.api_token
+        
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.post(
+                    f"{API_URL}/auth/token",
+                    data={
+                        "client_id": API_CLIENT_ID,
+                        "client_secret": API_CLIENT_SECRET,
+                        "grant_type": "client_credentials",
+                    },
+                )
+                resp.raise_for_status()
+                token_data = resp.json()
+                self.api_token = token_data.get("access_token")
+                expires_in = token_data.get("expires_in", 300)  # Default 5 minutes
+                self.api_token_expiry = now + expires_in
+                logger.debug(f"Got API token, expires in {expires_in}s")
+                return self.api_token
+        except Exception as exc:
+            logger.warning(f"Failed to get API token: {exc}")
+            return None
 
     # ------------------------------------------------------------------
     # Cooldown helper
@@ -413,50 +456,91 @@ class NotifierService:
     # Heartbeat (sensor-offline) monitor
     # ------------------------------------------------------------------
     async def monitor_heartbeats(self) -> None:
-        """Alert when a datastream hasn't reported data within its timeout."""
-        heartbeat_rules = [r for r in self.rules if r.get("type") == "heartbeat"]
-        if not heartbeat_rules:
-            logger.debug("No heartbeat rules configured")
-            return
-
-        logger.info(f"Heartbeat monitor started — {len(heartbeat_rules)} rules:")
-        for rule in heartbeat_rules:
-            logger.info(
-                f"  {rule['name']}: timeout {rule.get('timeout_minutes', 30)} min"
-            )
+        """Check all systems to see if they've created observations in the last 60 minutes.
+        Alerts if a system is offline (no observations in 60 min window).
+        """
+        logger.info("Heartbeat monitor started — checking all systems every 60 minutes")
 
         while True:
             try:
-                now = datetime.now(timezone.utc)
-                for rule in heartbeat_rules:
-                    ds_id = rule.get("datastream_id")
-                    timeout_min = rule.get("timeout_minutes", 30)
-                    cooldown_key = f"notifier:cooldown:heartbeat:{ds_id}"
+                # Get API token for authentication
+                token = await self._get_api_token()
+                if not token:
+                    logger.warning("Could not authenticate with API, skipping heartbeat check")
+                    await asyncio.sleep(CHECK_INTERVAL_HEARTBEAT)
+                    continue
 
-                    last_seen_raw = await self.redis.get(f"notifier:last_seen:{ds_id}")
-                    if last_seen_raw is None:
-                        # Never seen — can't evaluate yet
+                headers = {"Authorization": f"Bearer {token}"}
+
+                # Fetch all systems from the API
+                try:
+                    async with httpx.AsyncClient(timeout=10) as client:
+                        resp = await client.get(
+                            f"{API_URL}/api/v1/systems/",
+                            params={"limit": 100, "offset": 0},
+                            headers=headers,
+                        )
+                        resp.raise_for_status()
+                        systems = resp.json()
+                except Exception as exc:
+                    logger.warning(f"Failed to fetch systems list: {exc}")
+                    await asyncio.sleep(CHECK_INTERVAL_HEARTBEAT)
+                    continue
+
+                if not systems:
+                    logger.debug("No systems found")
+                    await asyncio.sleep(CHECK_INTERVAL_HEARTBEAT)
+                    continue
+
+                logger.debug(f"Checking heartbeat status for {len(systems)} systems")
+
+                # Check each system's status (last 60 minutes)
+                for system in systems:
+                    system_id = system.get("id")
+                    system_name = system.get("name", system_id)
+
+                    try:
+                        async with httpx.AsyncClient(timeout=5) as client:
+                            resp = await client.get(
+                                f"{API_URL}/api/v1/systems/{system_id}/status",
+                                params={"online_within_seconds": 60 * 60},  # 60 minutes
+                                headers=headers,
+                            )
+                            resp.raise_for_status()
+                            is_online = resp.json()
+                    except Exception as exc:
+                        logger.warning(f"Failed to check status for system {system_name}: {exc}")
                         continue
 
-                    last_seen = datetime.fromisoformat(last_seen_raw)
-                    silent_min = (now - last_seen).total_seconds() / 60
-
-                    if silent_min > timeout_min:
-                        if not await self._is_in_cooldown(cooldown_key):
+                    # Handle transitions: offline -> online or online -> offline
+                    if not is_online:
+                        if system_id not in self.offline_systems:
+                            # Newly offline
+                            self.offline_systems.add(system_id)
                             logger.error(
-                                f"Heartbeat missed: '{rule['name']}' silent for "
-                                f"{int(silent_min)} min (limit: {timeout_min} min)"
+                                f"System offline: '{system_name}' has no observations in the last 60 min"
                             )
                             await self.send_alert(
-                                "🚨 Heartbeat Failure",
-                                f"'{rule['name']}' silent for {int(silent_min)} min "
-                                f"(limit: {timeout_min} min)",
-                                priority=rule.get("priority", 9),
+                                "🚨 System Offline",
+                                f"'{system_name}' has no observations in the last 60 minutes",
+                                priority=9,
                             )
-                            # Long cooldown so we don't spam for a dead sensor
-                            await self._set_cooldown(cooldown_key, 6 * 60)
                         else:
-                            logger.debug(f"Heartbeat alert in cooldown: {rule['name']}")
+                            # Already offline
+                            logger.debug(f"System still offline: {system_name}")
+                    else:
+                        if system_id in self.offline_systems:
+                            # Came back online
+                            self.offline_systems.discard(system_id)
+                            logger.info(f"System back online: '{system_name}'")
+                            await self.send_alert(
+                                "✅ System Online",
+                                f"'{system_name}' is now sending observations",
+                                priority=5,
+                            )
+                        else:
+                            # Already online
+                            logger.debug(f"System online: {system_name}")
 
             except Exception as exc:
                 logger.error(f"Heartbeat monitor error: {exc}")
@@ -467,19 +551,11 @@ class NotifierService:
     # Observation rule checker
     # ------------------------------------------------------------------
     async def check_rules(self, observation: dict[str, Any]) -> None:
-        """Evaluate an incoming observation against threshold rules and update
-        the last-seen timestamp for heartbeat tracking."""
+        """Evaluate an incoming observation against threshold rules."""
         ds_id = observation.get("datastream_id")
         val_str = observation.get("result_numeric")
         if not ds_id or val_str is None:
             return
-
-        # Update last-seen for heartbeat monitoring (7-day TTL)
-        await self.redis.set(
-            f"notifier:last_seen:{ds_id}",
-            datetime.now(timezone.utc).isoformat(),
-            ex=7 * 86400,
-        )
 
         try:
             value = float(val_str)

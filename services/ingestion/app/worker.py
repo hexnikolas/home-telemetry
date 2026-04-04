@@ -30,8 +30,9 @@ REDIS_URL = os.getenv("REDIS_URL")
 REDIS_TOPIC_CONFIG_KEY = "mqtt:topic_config"
 AUTO_ACK = os.getenv("AUTO_ACK", "false").lower() == "true"
 MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "5"))  # API request retries (per batch)
-MAX_MESSAGE_RETRIES = int(os.getenv("MAX_MESSAGE_RETRIES", "3"))  # Message-level retries before DLQ
+MAX_MESSAGE_RETRIES = int(os.getenv("MAX_MESSAGE_RETRIES", "10"))  # Message-level retries before DLQ
 BASE_DELAY = int(os.getenv("BASE_DELAY", "5"))
+RETRY_DELAY = int(os.getenv("RETRY_DELAY", "10"))  # Delay in seconds before retrying failed messages
 API_CLIENT_ID = os.getenv("API_CLIENT_ID", "ingestion-worker")
 API_CLIENT_SECRET = os.getenv("API_CLIENT_SECRET", "")
 # Derive base host URL: strip /api/v1 suffix so token URL points to the right place
@@ -122,6 +123,7 @@ async def process_messages(messages: List[Dict[str, Any]]):
     4. Call handler to generate observations
     """
     observations = []
+    processing_errors = False
 
     for message in messages:
         try:
@@ -143,13 +145,15 @@ async def process_messages(messages: List[Dict[str, Any]]):
             if not data_payload:
                 logger.warning(f"Message has no data: {message}")
                 logger.info(f"{'='*60}\n")
+                processing_errors = True
                 continue
 
             # Determine model + datastreams from routing key
             model, datastreams = _get_topic_config(routing_key)
             if not model:
-                logger.warning(f"No topic config for: {routing_key}")
+                logger.warning(f"No topic config for: {routing_key} - marking as processing error")
                 logger.info(f"{'='*60}\n")
+                processing_errors = True
                 continue
 
             # Get handler for this model
@@ -157,6 +161,7 @@ async def process_messages(messages: List[Dict[str, Any]]):
             if not handler:
                 logger.error(f"Handler not found for model: {model}")
                 logger.info(f"{'='*60}\n")
+                processing_errors = True
                 continue
 
             logger.debug(f"Model: {model}")
@@ -174,24 +179,33 @@ async def process_messages(messages: List[Dict[str, Any]]):
         except Exception as e:
             logger.error(f"Error processing message: {e}", extra={"message": message})
             logger.info(f"{'='*60}\n")
+            processing_errors = True
             continue
 
     # Send all observations in bulk (if any were generated)
     if observations:
         success = await send_observations_to_api(observations)
     else:
-        # No observations generated, but messages were still processed
-        success = True
-        logger.info("No observations generated from batch")
+        # No observations generated
+        if processing_errors:
+            # Errors occurred during processing - don't ack
+            logger.warning("Errors occurred during processing - messages will not be acknowledged")
+            success = False
+        else:
+            # No errors but also no messages to process
+            success = True
+            logger.info("No observations generated from batch")
 
-    # Acknowledge all messages after processing, regardless of observation count
+    # Only acknowledge if all messages were successfully processed
     if success:
         await observation_queue.ack_batch()
         logger.info("Batch processed successfully - messages acknowledged and removed from queue")
     else:
         # Move failed messages to DLQ or retry with incremented count
+        logger.warning(f"Processing failed - waiting {RETRY_DELAY}s before retry")
+        await asyncio.sleep(RETRY_DELAY)
         await observation_queue.move_batch_to_dlq()
-        logger.warning("API request failed - messages will be retried or moved to DLQ")
+        logger.warning("Messages requeued or moved to DLQ")
 
 
 async def send_observations_to_api(observations: List[ObservationWrite]):
@@ -310,7 +324,7 @@ async def main():
     logger.info(f"Batch Size: {int(os.getenv('BATCH_SIZE', '100'))}")
     logger.info(f"Batch Timeout: {int(os.getenv('BATCH_TIMEOUT', '5'))} seconds")
     logger.info(f"API Retries: {MAX_RETRIES} attempts per batch")
-    logger.info(f"Message Retries: {MAX_MESSAGE_RETRIES} attempts before DLQ")
+    logger.info(f"Message Retries: {MAX_MESSAGE_RETRIES} attempts before DLQ (delay: {RETRY_DELAY}s)")
     logger.info(f"Topic Config Refresh: every {int(os.getenv('TOPIC_CONFIG_REFRESH_INTERVAL', '300'))} seconds")
     logger.info("=" * 60)
 

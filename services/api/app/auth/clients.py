@@ -41,6 +41,11 @@ CLIENTS: dict[str, dict] = {
         "secret_hash": os.getenv("CLIENT_SECRET_JOBS_HASH", ""),
         "scopes": ["systems:read", "datastreams:read", "observations:write", "admin:read"],
     },
+    # Notifier — may read systems for heartbeat monitoring
+    "notifier": {
+        "secret_hash": os.getenv("CLIENT_SECRET_NOTIFIER_HASH", ""),
+        "scopes": ["systems:read"],
+    },
 }
 
 

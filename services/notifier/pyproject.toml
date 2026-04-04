@@ -1,0 +1,25 @@
+[project]
+name = "notifier"
+version = "0.1.0"
+description = "Observation alerting and system heartbeat monitoring service"
+authors = [
+    {name = "Nikos Zacharatos", email = "nikos.zacharatos@iccs.gr"}
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "redis (>=7.3.0,<8.0.0)",
+    "aioredis (>=2.0.0,<3.0.0)",
+    "httpx (>=0.28.1,<0.29.0)",
+    "pyyaml (>=6.0,<7.0)",
+    "loguru (>=0.7.2,<1.0.0)",
+    "docker (>=7.0.0,<8.0.0)",
+    "shared @ file:///home/nikos/home-telemetry/shared",
+]
+
+[tool.poetry]
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

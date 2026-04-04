@@ -5,14 +5,21 @@ RUN apt-get update && apt-get install -y redis-tools procps && rm -rf /var/lib/a
 
 WORKDIR /app
 
-# Install dependencies (will add pyproject.toml/requirements.txt soon)
-RUN pip install --no-cache-dir redis aioredis httpx pyyaml loguru docker
+# Install poetry for dependency management
+RUN pip install --no-cache-dir poetry
 
 # Copy shared code
 COPY shared /shared
+
+# Copy notifier service files
+COPY services/notifier/pyproject.toml /app/
+COPY services/notifier/app ./app
+
+# Set Python path
 ENV PYTHONPATH="/:/shared"
 
-# Copy local app
-COPY services/notifier/app ./app
+# Install dependencies from pyproject.toml
+RUN poetry config virtualenvs.create false && \
+    poetry install --no-interaction --no-ansi --only=main
 
 CMD ["python", "app/main.py"]

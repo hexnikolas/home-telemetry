@@ -86,6 +86,8 @@ async def create_observation(db: AsyncSession, observation_in) -> Observation:
             }
             # Add to per-datastream stream (consumed by WebSocket clients and Notifier)
             await redis.xadd(channel, data, maxlen=1000, approximate=True)
+            # Set TTL to 7 days (604800 seconds)
+            await redis.expire(channel, 604800)
         except Exception as e:
             logger.warning(f"Warning: Failed to write observation to Redis: {str(e)}")
             # Don't raise - observation is already created in DB
@@ -134,6 +136,8 @@ async def create_observations_bulk(
             }
             # Publish to per-datastream stream (consumed by WebSocket clients and Notifier)
             await redis.xadd(channel, data, maxlen=1000, approximate=True)
+            # Set TTL to 7 days (604800 seconds)
+            await redis.expire(channel, 604800)
     except Exception as e:
         logger.warning(f"Warning: Failed to write observations to Redis: {str(e)}")
         # Don't raise - observations are already created in DB

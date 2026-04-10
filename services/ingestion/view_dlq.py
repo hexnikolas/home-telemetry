@@ -20,13 +20,13 @@ async def view_dlq(count: int = 10):
     dlq = await channel.declare_queue("observations.dlq", durable=True)
     
     message_count = dlq.declaration_result.message_count
-    print(f"\n{'='*80}")
-    print(f"Dead Letter Queue: observations.dlq")
-    print(f"Total messages: {message_count}")
-    print(f"{'='*80}\n")
+    logger.info(f"\n{'='*80}")
+    logger.info(f"Dead Letter Queue: observations.dlq")
+    logger.info(f"Total messages: {message_count}")
+    logger.info(f"{'='*80}\n")
     
     if message_count == 0:
-        print("✅ DLQ is empty - no failed messages")
+        # logger.info("✅ DLQ is empty - no failed messages")
         await connection.close()
         return
     
@@ -48,18 +48,18 @@ async def view_dlq(count: int = 10):
                 failed_at = message.headers.get("x-failed-at", "unknown") if message.headers else "unknown"
                 original_key = message.headers.get("x-original-routing-key", "unknown") if message.headers else "unknown"
                 
-                print(f"Message #{messages_viewed}")
-                print(f"  Failed at: {failed_at}")
-                print(f"  Retry count: {retry_count}")
-                print(f"  Original routing key: {original_key}")
-                print(f"  Body: {json.dumps(body, indent=2)}")
-                print(f"  {'-'*76}\n")
+                # logger.info(f"Message #{messages_viewed}")
+                # logger.info(f"  Failed at: {failed_at}")
+                # logger.info(f"  Retry count: {retry_count}")
+                # logger.info(f"  Original routing key: {original_key}")
+                # logger.info(f"  Body: {json.dumps(body, indent=2)}")
+                # logger.info(f"  {'-'*76}\n")
                 
                 if messages_viewed >= count:
                     break
     
     if messages_viewed < message_count:
-        print(f"Showing {messages_viewed} of {message_count} messages (use --count to see more)")
+        logger.info(f"Showing {messages_viewed} of {message_count} messages (use --count to see more)")
     
     await connection.close()
 
@@ -71,7 +71,7 @@ async def purge_dlq():
     dlq = await channel.declare_queue("observations.dlq", durable=True)
     
     purged = await dlq.purge()
-    print(f"✅ Purged {purged} messages from DLQ")
+    logger.error(f"✅ Purged {purged} messages from DLQ")
     
     await connection.close()
 
@@ -88,7 +88,7 @@ def main():
         if confirm.lower() == 'y':
             asyncio.run(purge_dlq())
         else:
-            print("Cancelled")
+            logger.info("Cancelled")
     else:
         asyncio.run(view_dlq(args.count))
 

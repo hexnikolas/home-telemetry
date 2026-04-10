@@ -144,6 +144,6 @@ async def get_system_status(db: AsyncSession, system_id: UUID, online_within_sec
     latest_observation_time = latest_observation.result_time
     now = datetime.now(timezone.utc)
     time_diff = (now - latest_observation_time).total_seconds()
-    print(f"Latest observation time: {latest_observation_time}, now: {now}, time_diff_seconds: {time_diff}")
+    # logger.info(f"Latest observation time: {latest_observation_time}, now: {now}, time_diff_seconds: {time_diff}")
     # if the time difference is less than the online_within_seconds threshold, return true, otherwise false
     return time_diff <= online_within_seconds

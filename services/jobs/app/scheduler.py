@@ -64,5 +64,5 @@ async def publish_schedules_to_redis():
             await redis.hset(f"job:schedule:{job_name}", mapping=schedule_info)
         await redis.close()
     except Exception as e:
-        print(f"Failed to publish schedules to Redis: {e}")
+        logger.error(f"Failed to publish schedules to Redis: {e}")
 

@@ -17,6 +17,21 @@ dependencies = [
     "shared @ file:///home/nikos/home-telemetry/shared",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest (>=7.4.0,<8.0.0)",
+    "pytest-asyncio (>=0.23.0,<1.0.0)",
+    "pytest-cov (>=4.1.0,<5.0.0)",
+]
+
+[tool.poetry.dependencies]
+pytest = { version = ">=7.4.0,<8.0.0", optional = true }
+pytest-asyncio = { version = ">=0.23.0,<1.0.0", optional = true }
+pytest-cov = { version = ">=4.1.0,<5.0.0", optional = true }
+
+[tool.poetry.extras]
+test = ["pytest", "pytest-asyncio", "pytest-cov"]
+
 [tool.poetry]
 package-mode = false
 

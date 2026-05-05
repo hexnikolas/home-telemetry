@@ -9,6 +9,7 @@ import asyncio
 import httpx
 from datetime import datetime, timezone
 from logger.logging_config import logger
+from app.ml_models.prophet_model import train_and_cache_model
 
 # Configuration
 API_URL = os.getenv("API_URL", "http://localhost:8000")
@@ -364,4 +365,35 @@ async def handle_fetch_open_meteo_data(ctx, data: Optional[Dict[str, Any]] = Non
         logger.error("Unexpected error during Open Meteo fetch", extra={"error": str(e)})
         raise
 
+
+async def handle_train_temperature_model(ctx, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Train Prophet temperature model and cache in Redis.
+    
+    Fetches 30 days of historical data from the outside temperature datastream,
+    trains a Prophet model, and caches it in Redis for use by the forecast API.
+    
+    Scheduled to run at startup and then on odd days of the month at midnight UTC.
+    """
+    if data is None:
+        data = {}
+    
+    datastream_id = data.get("datastream_id") or os.getenv("OUTSIDE_TEMP_DATASTREAM_ID")
+    
+    if not datastream_id:
+        logger.error("No datastream_id configured")
+        return {"status": "error", "message": "No datastream_id configured"}
+    
+    try:
+        token = await token_manager.get_token()
+        result = await train_and_cache_model(
+            datastream_id=datastream_id,
+            days=30,
+            token=token
+        )
+        return result
+    
+    except Exception as e:
+        logger.exception("Training failed", extra={"datastream_id": datastream_id})
+        return {"status": "error", "datastream_id": datastream_id, "error": str(e)}
 

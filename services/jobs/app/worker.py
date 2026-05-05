@@ -10,8 +10,9 @@ from arq.connections import RedisSettings
 from app.handlers import (
     handle_sync_mqtt_topics_to_redis,
     handle_fetch_open_meteo_data,
+    handle_train_temperature_model,
 )
-from app.scheduler import sync_mqtt_cron, fetch_meteo_cron, publish_schedules_to_redis
+from app.scheduler import sync_mqtt_cron, fetch_meteo_cron, train_temp_cron, publish_schedules_to_redis
 from logger.logging_config import setup_logging_json, setup_logging_colored
 
 # Initialize logging
@@ -53,12 +54,14 @@ class WorkerSettings:
     functions = [
         handle_sync_mqtt_topics_to_redis,
         handle_fetch_open_meteo_data,
+        handle_train_temperature_model,
     ]
     
     # Cron jobs for periodic tasks
     cron_jobs = [
         sync_mqtt_cron,
         fetch_meteo_cron,
+        train_temp_cron,
     ]
     
     on_startup = startup

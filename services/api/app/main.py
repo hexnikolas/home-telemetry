@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from contextlib import asynccontextmanager
 from app.database import init_engine, init_db
-from app.routers import systems, deployments, procedures, features_of_interest, observed_properties, datastreams, observations, admin
+from app.routers import systems, deployments, procedures, features_of_interest, observed_properties, datastreams, observations, admin, forecasts
 from app.routers.auth import router as auth_router
 from app.rate_limit import limiter
 from app.middlewares import CorrelationIdMiddleware, RequestLoggingMiddleware
@@ -108,6 +108,13 @@ tags_metadata = [
         ),
     },
     {
+        "name": "Forecasts",
+        "description": (
+            "Endpoints for retrieving **Forecasts** generated from trained models. "
+            "Currently provides 12-hour temperature forecasts using Prophet with 95% confidence intervals."
+        ),
+    },
+    {
         "name": "Auth",
         "description": (
             "OAuth2 **Client Credentials** token endpoint (RFC 6749 §4.4). "
@@ -154,6 +161,7 @@ app.include_router(features_of_interest.router, prefix="/api/v1/features-of-inte
 app.include_router(observed_properties.router, prefix="/api/v1/observed-properties", tags=["ObservedProperties"])
 app.include_router(datastreams.router, prefix="/api/v1/datastreams", tags=["Datastreams"])
 app.include_router(observations.router, prefix="/api/v1/observations", tags=["Observations"])
+app.include_router(forecasts.router, prefix="/api/v1/forecasts", tags=["Forecasts"])
 app.include_router(admin.router, prefix="/api/v1", tags=["Admin"])
 app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 

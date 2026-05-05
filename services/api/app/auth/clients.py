@@ -36,10 +36,10 @@ CLIENTS: dict[str, dict] = {
         "secret_hash": os.getenv("CLIENT_SECRET_INGESTION_HASH", ""),
         "scopes": ["observations:write"],
     },
-    # Jobs worker / scheduler — may read systems, datastreams, and write observations
+    # Jobs worker / scheduler — may read systems, datastreams, observations and write observations
     "jobs-worker": {
         "secret_hash": os.getenv("CLIENT_SECRET_JOBS_HASH", ""),
-        "scopes": ["systems:read", "datastreams:read", "observations:write", "admin:read"],
+        "scopes": ["systems:read", "datastreams:read", "observations:read", "observations:write", "admin:read"],
     },
     # Notifier — may read systems for heartbeat monitoring
     "notifier": {

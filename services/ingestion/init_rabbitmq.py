@@ -7,12 +7,20 @@ async def init():
     channel = await connection.channel()
     
     # Main observations queue
-    queue = await channel.declare_queue("observations", durable=True)
+    queue = await channel.declare_queue(
+        "observations",
+        durable=True,
+        arguments={"x-max-length": 50000, "x-overflow": "reject-publish"},
+    )
     await queue.bind("amq.topic", routing_key="#.SENSOR")
     print("Queue 'observations' and binding created successfully")
     
     # Dead Letter Queue (DLQ) for failed messages
-    dlq = await channel.declare_queue("observations.dlq", durable=True)
+    dlq = await channel.declare_queue(
+        "observations.dlq",
+        durable=True,
+        arguments={"x-max-length": 10000, "x-overflow": "reject-publish"},
+    )
     print("Dead Letter Queue 'observations.dlq' created successfully")
     
     await connection.close()

@@ -643,8 +643,12 @@ class NotifierService:
                         
                         for msg_id, data in messages:
                             logger.debug(f"Processing observation {msg_id} from {stream_name_str}")
-                            await self.check_rules(data)
-                            await self.redis.xack(stream_name_str, CONSUMER_GROUP, msg_id)
+                            try:
+                                await self.check_rules(data)
+                            except Exception as exc:
+                                logger.error(f"check_rules failed for {msg_id}: {exc}")
+                            finally:
+                                await self.redis.xack(stream_name_str, CONSUMER_GROUP, msg_id)
 
                 except aioredis.ConnectionError:
                     logger.error("Redis connection lost — retrying in 5 s")

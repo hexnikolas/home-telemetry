@@ -180,6 +180,8 @@ def setup_logging(
         level=level.upper(),
         colorize=not json_output,
         serialize=json_output,  # Use built-in JSON serialization
+        backtrace=False,  # Disable full traceback
+        diagnose=False,   # Disable variable inspection in tracebacks
     )
     
     # Convert loguru logger to stdlib format for FastAPI/integrations

@@ -108,7 +108,7 @@ async def _fetch_observations(
                 response = await client.get(
                     OBSERVATIONS_API_URL,
                     params={
-                        "datastream_id": datastream_id,
+                        "datastream_ids": datastream_id,
                         "time": time_filter,
                         "limit": limit,
                         "offset": offset,
@@ -146,6 +146,15 @@ async def _fetch_observations(
                 break
     
     logger.info("Observation fetch complete", extra={"total_fetched": len(all_obs)})
+    
+    # Log the actual fetched value range
+    if all_obs:
+        temps = [o.get("result_numeric") for o in all_obs if o.get("result_numeric") is not None]
+        if temps:
+            logger.info(
+                f"Fetched observations: min {min(temps):.1f}° | max {max(temps):.1f}° | mean {sum(temps)/len(temps):.1f}° | count {len(temps)}"
+            )
+    
     return all_obs
 
 
@@ -172,11 +181,7 @@ def _prepare_dataframe(observations: List[Dict[str, Any]]) -> pd.DataFrame:
     df = df.drop_duplicates(subset=["ds"], keep="first")
     
     logger.info(
-        "DataFrame ready",
-        extra={
-            "rows": len(df),
-            "date_range": f"{df['ds'].min()} to {df['ds'].max()}",
-        }
+        f"DataFrame ready: {len(df)} rows | temp range {df['y'].min():.1f}°-{df['y'].max():.1f}° | mean {df['y'].mean():.1f}°"
     )
     
     return df
@@ -196,7 +201,7 @@ def _train_prophet(df: pd.DataFrame) -> Prophet:
         interval_width=0.95,
         yearly_seasonality=True,
         weekly_seasonality=True,
-        daily_seasonality=False,
+        daily_seasonality=True,
         seasonality_mode="additive",
     )
     

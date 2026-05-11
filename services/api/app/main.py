@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.database import init_engine, init_db
 from app.routers import systems, deployments, procedures, features_of_interest, observed_properties, datastreams, observations, admin, forecasts
@@ -148,6 +149,15 @@ app = FastAPI(
     description=api_description,
     openapi_tags=tags_metadata,
     lifespan=lifespan
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development; restrict in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Add middleware (order matters - add in reverse order of execution)

@@ -13,6 +13,7 @@ from app.handlers import (
     handle_train_temperature_model,
 )
 from app.scheduler import sync_mqtt_cron, fetch_meteo_cron, train_temp_cron, publish_schedules_to_redis
+from app.rabbitmq_consumer import run_retrain_consumer
 from logger.logging_config import setup_logging_json, setup_logging_colored
 
 # Initialize logging
@@ -36,9 +37,17 @@ redis_password = parsed.password
 
 
 async def startup(ctx):
-    """Publish job schedules to Redis on worker startup"""
+    """Publish job schedules to Redis and start RabbitMQ consumer on worker startup"""
     await publish_schedules_to_redis()
     logger.info("Published job schedules to Redis")
+    
+    # Start the RabbitMQ retrain consumer in a background task
+    # This runs alongside the ARQ worker
+    if os.getenv("RABBITMQ_URL"):
+        asyncio.create_task(run_retrain_consumer())
+        logger.info("Started RabbitMQ retrain consumer")
+    else:
+        logger.warning("RABBITMQ_URL not configured, retrain consumer disabled")
 
 
 class WorkerSettings:

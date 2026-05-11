@@ -6,13 +6,15 @@ authors = [
     {name = "Nikos",email = "nikos.zacharatos@iccs.gr"}
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10,<4"
 dependencies = [
     "arq>=0.25.0,<1.0.0",
     "httpx (>=0.28.1,<0.29.0)",
     "loguru>=0.7.2,<1.0.0",
     "pandas>=2.0.0,<3.0.0",
     "prophet>=1.1.5,<2.0.0",
+    "aio-pika>=9.6.2,<10.0.0",
+    "redis>=7.2.1,<8.0.0",
     "shared @ file:///home/nikos/home-telemetry/shared",
 ]
 

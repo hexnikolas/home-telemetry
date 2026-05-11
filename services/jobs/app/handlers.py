@@ -7,6 +7,7 @@ import json
 from typing import Any, Dict, Optional
 import asyncio
 import httpx
+import redis.asyncio as aioredis
 from datetime import datetime, timezone
 from logger.logging_config import logger
 from app.ml_models.prophet_model import train_and_cache_model
@@ -374,6 +375,7 @@ async def handle_train_temperature_model(ctx, data: Optional[Dict[str, Any]] = N
     trains a Prophet model, and caches it in Redis for use by the forecast API.
     
     Scheduled to run at startup and then on odd days of the month at midnight UTC.
+    Clears the retrain in-progress flag when complete.
     """
     if data is None:
         data = {}
@@ -384,11 +386,20 @@ async def handle_train_temperature_model(ctx, data: Optional[Dict[str, Any]] = N
         logger.error("No datastream_id configured")
         return {"status": "error", "message": "No datastream_id configured"}
     
+    redis_url = os.getenv("REDIS_URL")
+    if not redis_url:
+        logger.error("REDIS_URL environment variable not configured")
+        return {"status": "error", "message": "No REDIS_URL configured"}
+
+    redis = None
+    
     try:
+        redis = await aioredis.from_url(redis_url, decode_responses=True)
+        
         token = await token_manager.get_token()
         result = await train_and_cache_model(
             datastream_id=datastream_id,
-            days=30,
+            days=35,
             token=token
         )
         return result
@@ -396,4 +407,15 @@ async def handle_train_temperature_model(ctx, data: Optional[Dict[str, Any]] = N
     except Exception as e:
         logger.exception("Training failed", extra={"datastream_id": datastream_id})
         return {"status": "error", "datastream_id": datastream_id, "error": str(e)}
+    
+    finally:
+        # Clear the retrain in-progress flag (set by the API when the request came in)
+        if redis:
+            try:
+                await redis.delete("model:retrain:in_progress")
+                logger.info("Cleared retrain in-progress flag", extra={"datastream_id": datastream_id})
+            except Exception as e:
+                logger.warning("Failed to clear retrain flag", extra={"error": str(e)})
+            finally:
+                await redis.close()
 

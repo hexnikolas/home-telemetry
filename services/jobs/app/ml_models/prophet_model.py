@@ -2,6 +2,7 @@
 Prophet temperature model training and caching
 """
 import pickle
+import json
 import os
 import httpx
 import redis.asyncio as aioredis
@@ -12,8 +13,14 @@ from prophet import Prophet
 from logger.logging_config import logger
 
 # Configuration
-API_URL = os.getenv("API_URL", "http://localhost:8000")
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+API_URL = os.getenv("API_URL")
+if not API_URL:
+    logger.error("API_URL environment variable is not set")
+    raise ValueError("API_URL environment variable is required")
+REDIS_URL = os.getenv("REDIS_URL")
+if not REDIS_URL:
+    logger.error("REDIS_URL environment variable is not set")
+    raise ValueError("REDIS_URL environment variable is required")
 OBSERVATIONS_API_URL = f"{API_URL}/api/v1/observations/"
 
 # Auth
@@ -199,10 +206,12 @@ def _train_prophet(df: pd.DataFrame) -> Prophet:
     
     model = Prophet(
         interval_width=0.95,
-        yearly_seasonality=True,
-        weekly_seasonality=True,
-        daily_seasonality=True,
-        seasonality_mode="additive",
+        yearly_seasonality=False,  # Not enough data (only 30 days) for yearly seasonality
+        weekly_seasonality=False,  # Not enough data (only ~4 weeks) for reliable weekly patterns
+        daily_seasonality=True,    # Daily cycles are strong in temperature data
+        seasonality_mode="multiplicative",  # Better for percentage variations in temperature
+        seasonality_prior_scale=5.0,  # Reduce seasonality strength to avoid overshooting
+        changepoint_prior_scale=0.01,  # Reduce trend sensitivity to noise
     )
     
     logger.debug("Prophet model created with parameters")
@@ -213,10 +222,11 @@ def _train_prophet(df: pd.DataFrame) -> Prophet:
 
 
 async def _cache_model(datastream_id: str, model: Prophet) -> None:
-    """Cache model in Redis"""
+    """Cache model and metadata in Redis"""
     logger.info("Caching model in Redis", extra={"datastream_id": datastream_id})
     
-    redis_key = f"weather_model:{datastream_id}"
+    model_key = f"weather_model:{datastream_id}"
+    metadata_key = f"{datastream_id}:model_metadata"
     
     try:
         redis = await aioredis.from_url(REDIS_URL, decode_responses=False)
@@ -225,13 +235,23 @@ async def _cache_model(datastream_id: str, model: Prophet) -> None:
         
         logger.debug("Serialized model", extra={"size_bytes": len(serialized)})
         
-        await redis.setex(redis_key, ttl_seconds, serialized)
+        # Cache the model
+        await redis.setex(model_key, ttl_seconds, serialized)
+        
+        # Cache the metadata with trained_at timestamp
+        metadata = {
+            "trained_at": datetime.now(timezone.utc).isoformat(),
+            "datastream_id": datastream_id,
+        }
+        await redis.setex(metadata_key, ttl_seconds, json.dumps(metadata))
+        
         await redis.close()
         
         logger.info(
-            "Model cached successfully",
+            "Model and metadata cached successfully",
             extra={
-                "key": redis_key,
+                "model_key": model_key,
+                "metadata_key": metadata_key,
                 "size_bytes": len(serialized),
                 "ttl_seconds": ttl_seconds,
             }

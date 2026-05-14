@@ -9,6 +9,12 @@ from app.handlers import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _setup_env(jobs_env):
+    """Automatically set up environment for all tests in this module."""
+    pass
+
+
 class TestTokenManager:
     """Test OAuth2 token management."""
 

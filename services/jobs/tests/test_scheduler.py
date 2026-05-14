@@ -5,6 +5,12 @@ from app.scheduler import publish_schedules_to_redis, JOB_DEFINITIONS, SCHEDULES
 from app.queue import get_redis_settings
 
 
+@pytest.fixture(autouse=True)
+def _setup_env(jobs_env):
+    """Automatically set up environment for all tests in this module."""
+    pass
+
+
 class TestRedisSettings:
     """Test Redis connection settings parser."""
 

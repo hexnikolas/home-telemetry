@@ -242,7 +242,7 @@ async def retrain_temperature_model() -> dict:
                     trained_at = datetime.fromisoformat(trained_at_str)
                     model_age = datetime.now(timezone.utc) - trained_at
                     
-                    if model_age < timedelta(minutes=1):
+                    if model_age < timedelta(hours=1):
                         logger.warning(
                             "Model too young to retrain",
                             extra={

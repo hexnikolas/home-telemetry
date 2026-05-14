@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from typing import List
 
@@ -17,8 +17,8 @@ class TemperatureForecast(BaseModel):
     forecast_generated_at: datetime
     forecast_points: List[ForecastPoint]
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "datastream_id": "28363ed0-b8c2-4262-b2e4-acc48333be7c",
                 "forecast_generated_at": "2026-05-05T18:00:00Z",
@@ -32,3 +32,4 @@ class TemperatureForecast(BaseModel):
                 ]
             }
         }
+    )

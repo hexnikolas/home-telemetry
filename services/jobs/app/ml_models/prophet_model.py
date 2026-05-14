@@ -13,14 +13,8 @@ from prophet import Prophet
 from logger.logging_config import logger
 
 # Configuration
-API_URL = os.getenv("API_URL")
-if not API_URL:
-    logger.error("API_URL environment variable is not set")
-    raise ValueError("API_URL environment variable is required")
-REDIS_URL = os.getenv("REDIS_URL")
-if not REDIS_URL:
-    logger.error("REDIS_URL environment variable is not set")
-    raise ValueError("REDIS_URL environment variable is required")
+API_URL = os.getenv("API_URL", "http://api:8000")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 OBSERVATIONS_API_URL = f"{API_URL}/api/v1/observations/"
 
 # Auth

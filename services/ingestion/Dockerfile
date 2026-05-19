@@ -1,21 +1,23 @@
 FROM python:3.12-slim
 
-WORKDIR /app
-
 RUN pip install poetry
 
 ENV POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_NO_INTERACTION=1
+    POETRY_NO_INTERACTION=1 \
+    PYTHONPATH=/app
 
-# Copy the shared module to match the path referenced in pyproject.toml
-COPY shared/ /home/nikos/home-telemetry/shared/
+# Copy entire repo maintaining directory structure
+COPY . /app/
 
-# Copy the ingestion service
-COPY services/ingestion/ .
+WORKDIR /app
 
-# Remove lock file so poetry resolves paths fresh from pyproject.toml
-# (lock file has the host machine's path for the local shared package)
-RUN rm -f poetry.lock && poetry install --no-root
+# Install shared first
+RUN cd shared && poetry install --without dev
+
+# Install ingestion service
+RUN cd services/ingestion && poetry install --without dev
+
+WORKDIR /app/services/ingestion
 
 # Run the worker
 CMD ["python", "-m", "app.worker"]

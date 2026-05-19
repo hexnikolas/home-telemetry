@@ -1,24 +1,24 @@
 FROM python:3.13-slim
 
-WORKDIR /app
-
 # Install Poetry
 RUN pip install --no-cache-dir poetry
 
 ENV POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_NO_INTERACTION=1
+    POETRY_NO_INTERACTION=1 \
+    PYTHONPATH=/app
 
-# Copy the shared module to match the path referenced in pyproject.toml
-COPY shared/ /home/nikos/home-telemetry/shared/
+# Copy entire repo maintaining directory structure
+COPY . /app/
 
-# Copy dependency files
-COPY services/jobs/pyproject.toml services/jobs/poetry.lock* ./
+WORKDIR /app
 
-# Remove lock file so poetry resolves paths fresh from pyproject.toml
-RUN rm -f poetry.lock && poetry install --only main
+# Install shared first
+RUN cd shared && poetry install --without dev
 
-# Copy application code
-COPY services/jobs/app/ app/
+# Install jobs service
+RUN cd services/jobs && poetry install
+
+WORKDIR /app/services/jobs
 
 # Run arq worker with built-in scheduler and cron job support
 CMD ["arq", "app.worker.WorkerSettings"]

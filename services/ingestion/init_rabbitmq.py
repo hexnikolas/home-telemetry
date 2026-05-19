@@ -6,6 +6,19 @@ async def init():
     connection = await aio_pika.connect("amqp://nikos:12345@rabbitmq/")
     channel = await connection.channel()
     
+    # Delete queues if they exist (to reset parameters)
+    try:
+        await channel.queue_delete("observations")
+        print("Deleted existing 'observations' queue")
+    except Exception as e:
+        print(f"'observations' queue didn't exist or couldn't delete: {e}")
+    
+    try:
+        await channel.queue_delete("observations.dlq")
+        print("Deleted existing 'observations.dlq' queue")
+    except Exception as e:
+        print(f"'observations.dlq' queue didn't exist or couldn't delete: {e}")
+    
     # Main observations queue
     queue = await channel.declare_queue(
         "observations",

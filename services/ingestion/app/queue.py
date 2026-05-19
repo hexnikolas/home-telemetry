@@ -48,7 +48,11 @@ class ObservationQueue:
         try:
             self.connection = await aio_pika.connect(self.rabbitmq_url)
             self.channel = await self.connection.channel()
-            self.queue = await self.channel.declare_queue(self.queue_name, durable=True)
+            self.queue = await self.channel.declare_queue(
+                self.queue_name,
+                durable=True,
+                arguments={"x-max-length": 50000, "x-overflow": "reject-publish"}
+            )
             logger.info(f"[INGESTION] Connected to RabbitMQ queue: {self.queue_name}")
         except Exception as e:
             logger.error(f"[INGESTION] Failed to connect to RabbitMQ: {e}")

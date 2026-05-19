@@ -49,9 +49,7 @@ services:
       - .env
     environment:
       PYTHONUNBUFFERED: 1
-      PYTHONPATH: /home/nikos/home-telemetry
-    volumes:
-      - .:/app
+      PYTHONPATH: /app
     depends_on:
       rabbitmq:
         condition: service_healthy

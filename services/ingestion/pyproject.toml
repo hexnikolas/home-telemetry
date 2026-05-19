@@ -12,7 +12,6 @@ dependencies = [
     "httpx>=0.27.0,<0.28.0",
     "redis>=7.4.0,<8.0.0",
     "pytz>=2026.1.post1,<2027.0",
-    "shared @ file:///home/nikos/home-telemetry/shared",
 ]
 
 [tool.poetry]
@@ -21,7 +20,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-shared = {develop = true}
+shared = { path = "../../shared", develop = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

@@ -22,7 +22,6 @@ dependencies = [
     "bcrypt>=4.0.0,<5.0.0",
     "pandas>=2.0.0,<3.0.0",
     "prophet>=1.1.5,<2.0.0",
-    "shared @ file:///home/nikos/home-telemetry/shared",
     "python-multipart (>=0.0.22,<0.0.23)",
     "aio-pika (>=9.6.2,<10.0.0)",
 ]
@@ -33,7 +32,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-shared = {develop = true}
+shared = { path = "../../shared", develop = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

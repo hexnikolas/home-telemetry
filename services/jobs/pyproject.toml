@@ -15,7 +15,6 @@ dependencies = [
     "prophet>=1.1.5,<2.0.0",
     "aio-pika>=9.6.2,<10.0.0",
     "redis>=7.2.1,<8.0.0",
-    "shared @ file:///home/nikos/home-telemetry/shared",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +25,7 @@ test = [
 ]
 
 [tool.poetry.dependencies]
+shared = { path = "../../shared", develop = true }
 pytest = { version = ">=7.4.0,<8.0.0", optional = true }
 pytest-asyncio = { version = ">=0.23.0,<1.0.0", optional = true }
 pytest-cov = { version = ">=4.1.0,<5.0.0", optional = true }

@@ -180,7 +180,7 @@ def sync_mqtt_topics_to_redis() -> None:
     min_backoff=5*60*1000,  # 5 minutes in milliseconds
     max_backoff=5*60*1000,  # No exponential backoff, always 5 min
 )
-def fetch_open_meteo_data(result_time: Optional[str] = None, is_retry: bool = False) -> Dict[str, Any]:
+def fetch_open_meteo_data(result_time: Optional[str] = None, is_retry: bool = False) -> None:
     """
     Fetch weather data from Open Meteo API and create observations.
     
@@ -220,7 +220,7 @@ def fetch_open_meteo_data(result_time: Optional[str] = None, is_retry: bool = Fa
         
         if not systems:
             logger.error("Open Meteo system not found")
-            return {"status": "error", "message": "Open Meteo system not found"}
+            return
         
         system = systems[0]
         system_id = system["id"]
@@ -238,7 +238,7 @@ def fetch_open_meteo_data(result_time: Optional[str] = None, is_retry: bool = Fa
         
         if not datastreams:
             logger.error("No datastreams found for Open Meteo system")
-            return {"status": "error", "message": "No datastreams found"}
+            return
         
         # 3. Map datastreams by name
         ds_mapping = {}
@@ -395,17 +395,17 @@ def fetch_open_meteo_data(result_time: Optional[str] = None, is_retry: bool = Fa
             logger.warning("No observations to create")
             observations_created = 0
         
-        return {
-            "status": "success",
-            "observations_created": observations_created,
-            "system_id": system_id,
-            "result_time": result_time,
-            "is_retry": is_retry,
-        }
+        logger.debug(
+            "Open Meteo job finished",
+            extra={
+                "observations_created": observations_created,
+                "system_id": system_id,
+            }
+        )
 
 
 @dramatiq.actor()
-def train_temperature_model(datastream_id: Optional[str] = None) -> Dict[str, Any]:
+def train_temperature_model(datastream_id: Optional[str] = None) -> None:
     """
     Train Prophet temperature model and cache in Redis.
     
@@ -413,24 +413,57 @@ def train_temperature_model(datastream_id: Optional[str] = None) -> Dict[str, An
     trains a Prophet model, and caches it in Redis for use by the forecast API.
     """
     datastream_id = datastream_id or os.getenv("OUTSIDE_TEMP_DATASTREAM_ID")
+    RETRAIN_IN_PROGRESS_KEY = "model:retrain:in_progress"
     
     if not datastream_id:
         logger.error("No datastream_id configured")
-        return {"status": "error", "message": "No datastream_id configured"}
+        return
     
     try:
         import redis
         r = redis.from_url(REDIS_URL, decode_responses=True)
         token = token_manager.get_token()
         
-        # Call the async train_and_cache_model synchronously
-        # This is a simplified version - in production you might want async support
-        logger.info("Training temperature model", extra={"datastream_id": datastream_id})
+        logger.info("Starting temperature model training", extra={"datastream_id": datastream_id})
         
-        # For now, just log - you can adapt this based on your actual implementation
-        logger.info("Model training would happen here")
-        return {"status": "success", "datastream_id": datastream_id}
+        # Note: train_and_cache_model is async but called from a sync actor context
+        # We need to use a sync redis connection and run it synchronously
+        import asyncio
+        from app.ml_models.prophet_model import train_and_cache_model
+        
+        # Run async function in sync context
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            model_id = loop.run_until_complete(train_and_cache_model(
+                datastream_id=datastream_id,
+                token=token,
+            ))
+        finally:
+            loop.close()
+        
+        logger.info(
+            "Model training completed successfully",
+            extra={"datastream_id": datastream_id, "model_id": model_id}
+        )
         
     except Exception as e:
-        logger.exception("Training failed", extra={"datastream_id": datastream_id})
-        return {"status": "error", "datastream_id": datastream_id, "error": str(e)}
+        logger.exception(
+            "Model training failed",
+            extra={"datastream_id": datastream_id, "error": str(e)}
+        )
+    finally:
+        # Clear the in-progress flag regardless of success/failure
+        try:
+            import redis
+            r = redis.from_url(REDIS_URL, decode_responses=True)
+            r.delete(RETRAIN_IN_PROGRESS_KEY)
+            logger.info(
+                "Cleared retrain in-progress flag",
+                extra={"datastream_id": datastream_id}
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to clear retrain in-progress flag",
+                extra={"datastream_id": datastream_id, "error": str(e)}
+            )

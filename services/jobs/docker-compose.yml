@@ -6,7 +6,7 @@ services:
     container_name: home-telemetry-jobs-worker
     env_file:
       - .env
-    command: dramatiq app.tasks -p 1 -t 4
+    command: dramatiq app.worker -p 2 -t 4
     deploy:
       replicas: 1
     volumes:

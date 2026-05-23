@@ -1,33 +1,57 @@
 # Home Telemetry Project
 
-This repository contains a modular home telemetry system built with a microservices architecture.
+Microservices home monitoring system. Sensor → MQTT → API → Observations → Alerts & Dashboards.
 
-## Overview
+## Data Pipeline
 
-- **Microservices:**
-  - Each service (API, Ingestion, Grafana, database, etc.) runs independently and communicates via well-defined interfaces.
-  - Services are organized in the `services/` directory.
+```
+Sensors (MQTT)
+    ↓
+RabbitMQ (message bridge)
+    ↓
+Ingestion Worker
+    ├─ Route by topic (via Redis mapping)
+    ├─ Handler per device model (SHT40, NOUS A1T, etc.)
+    └─ POST to API
+        ↓
+    API (FastAPI)
+        ├─ Store in TimescaleDB
+        ├─ Publish to Redis Streams (datastream:{uuid})
+        └─ WebSocket subscriptions
+            ↓
+    Notifier (subscribes Redis Streams)
+        ├─ Evaluate rules (threshold, heartbeat)
+        └─ Send alerts (Gotify, etc.)
+    
+    Grafana (queries TimescaleDB)
+        └─ Dashboards
+    
+    Jobs Service (background tasks)
+        ├─ Sync MQTT topic config (every 5 min)
+        ├─ Fetch weather data (every :00, :30)
+        └─ Train ML models (every 2 days)
+```
 
-- **Shared Schemas Module:**
-  - Common Pydantic schemas for data validation and serialization are located in `shared/schemas/`.
-  - These schemas are imported by multiple services to ensure consistent data models across the project.
+## Key Features
 
-- **Tests:**
-  - Automated tests are provided in the `tests/` directory.
+- **OAuth2 Client Credentials** — All services authenticate via API tokens
+- **Real-time Subscriptions** — WebSocket for live observation streams
+- **Threshold Alerts** — Rules-based notifications when data exceeds limits
+- **Heartbeat Monitoring** — Detects offline sensors
+- **Time Series Forecasting** — Prophet models for temperature predictions
+- **Data Model** — OGC-aligned (Systems, Procedures, Deployments, Features, Datastreams, Observations)
 
 ## Services
 
-The following microservices make up the home telemetry system:
-
-| Service | Description |
-|---------|-------------|
-| **API** | FastAPI backend providing RESTful endpoints for data management and system control |
-| **Ingestion** | Data ingestion service for processing incoming telemetry data from various sources |
-| **Jobs** | Background job queue service for handling asynchronous tasks and scheduled jobs |
-| **Notifier** | Notification service for sending alerts and notifications via configured channels |
-| **Database** | TimescaleDB for time-series data storage and pgAdmin for database management |
-| **Redis** | In-memory cache and message queue for job processing and data caching |
-| **Grafana** | Visualization and dashboarding platform for monitoring and analytics |
+| Service | Role |
+|---------|------|
+| **API** | REST + WebSocket backend, OAuth2, data storage |
+| **Ingestion** | MQTT consumer, batch observations to API |
+| **Jobs** | Scheduled tasks (MQTT sync, weather, model training), retrain listener |
+| **Notifier** | Rules engine, alert delivery |
+| **TimescaleDB** | Time-series storage |
+| **Redis** | Caching, message queue, real-time streams |
+| **Grafana** | Dashboards |
 
 ## Getting Started
 

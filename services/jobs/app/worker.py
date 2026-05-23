@@ -1,22 +1,12 @@
 """
-Standalone background worker service using arq
-
-Usage:
-    arq app.worker.WorkerSettings
+Worker startup - initializes scheduler and loads tasks
+This module is used as the entry point by Dramatiq: dramatiq app.worker
 """
 import os
-import asyncio
-from arq.connections import RedisSettings
-from app.handlers import (
-    handle_sync_mqtt_topics_to_redis,
-    handle_fetch_open_meteo_data,
-    handle_train_temperature_model,
-)
-from app.scheduler import sync_mqtt_cron, fetch_meteo_cron, train_temp_cron, publish_schedules_to_redis
-from app.rabbitmq_consumer import run_retrain_consumer
+import sys
 from logger.logging_config import setup_logging_json, setup_logging_colored
 
-# Initialize logging
+# Initialize logging FIRST
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json").lower()
 if LOG_FORMAT == "colored":
@@ -24,60 +14,18 @@ if LOG_FORMAT == "colored":
 else:
     logger = setup_logging_json("home-telemetry-jobs-worker", level=LOG_LEVEL)
 
+logger.info("Initializing Dramatiq worker with scheduler")
 
-# Parse Redis URL
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-from urllib.parse import urlparse
+# Import broker FIRST (exposes it at module level for dramatiq)
+from app.broker import broker  # noqa: F401, E402
 
-parsed = urlparse(REDIS_URL)
-redis_host = parsed.hostname or "localhost"
-redis_port = parsed.port or 6379
-redis_db = int(parsed.path.lstrip("/") or "0")
-redis_password = parsed.password
+# Import all tasks so they're registered with the broker
+from app import tasks  # noqa: F401, E402
 
+# Start the background scheduler
+from app.scheduler import start_scheduler  # noqa: E402
 
-async def startup(ctx):
-    """Publish job schedules to Redis and start RabbitMQ consumer on worker startup"""
-    await publish_schedules_to_redis()
-    logger.info("Published job schedules to Redis")
-    
-    # Start the RabbitMQ retrain consumer in a background task
-    # This runs alongside the ARQ worker
-    if os.getenv("RABBITMQ_URL"):
-        asyncio.create_task(run_retrain_consumer())
-        logger.info("Started RabbitMQ retrain consumer")
-    else:
-        logger.warning("RABBITMQ_URL not configured, retrain consumer disabled")
+scheduler = start_scheduler()
 
-
-class WorkerSettings:
-    """arq worker configuration"""
-    
-    redis_settings = RedisSettings(
-        host=redis_host,
-        port=redis_port,
-        database=redis_db,
-        password=redis_password,
-    )
-    
-    functions = [
-        handle_sync_mqtt_topics_to_redis,
-        handle_fetch_open_meteo_data,
-        handle_train_temperature_model,
-    ]
-    
-    # Cron jobs for periodic tasks
-    cron_jobs = [
-        sync_mqtt_cron,
-        fetch_meteo_cron,
-        train_temp_cron,
-    ]
-    
-    on_startup = startup
-    on_shutdown = None
-    
-    # Worker settings
-    job_timeout = 600  # 10 minutes
-    keep_result = 86400  # Keep results for 24 hours
-    allow_abort_jobs = True
+logger.info("Dramatiq worker ready - scheduler running")
 

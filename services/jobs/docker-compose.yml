@@ -6,8 +6,7 @@ services:
     container_name: home-telemetry-jobs-worker
     env_file:
       - .env
-    # arq handles both job processing and cron scheduling
-    command: arq app.worker.WorkerSettings
+    command: dramatiq app.tasks -p 1 -t 4
     deploy:
       replicas: 1
     volumes:

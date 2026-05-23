@@ -1,88 +1,67 @@
 """
-Cron jobs configuration for arq
-
-The cron jobs defined here will be executed automatically by the worker
-when running with arq scheduler support.
+Periodic task scheduler using APScheduler
+Runs alongside the Dramatiq worker in the same process
 """
-
 import os
-import json
-import redis.asyncio as aioredis
-from arq.cron import cron
-from app.handlers import handle_sync_mqtt_topics_to_redis, handle_fetch_open_meteo_data, handle_train_temperature_model
+import logging
+from datetime import datetime, timezone
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from logger.logging_config import logger
+from app.tasks import sync_mqtt_topics_to_redis, fetch_open_meteo_data, train_temperature_model
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
-# Define jobs once - handler and schedule
-JOB_DEFINITIONS = {
-    "sync_mqtt_topics_to_redis": {
-        "handler": handle_sync_mqtt_topics_to_redis,
-        "minute": set(range(0, 60, 5)),  # Every 5 minutes
-        "run_at_startup": True,
-    },
-    "fetch_open_meteo_data": {
-        "handler": handle_fetch_open_meteo_data,
-        "minute": {0, 30},  # At 0 and 30 minutes
-        "run_at_startup": False,
-    },
-    "train_temperature_model": {
-        "handler": handle_train_temperature_model,
-        "minute": {0},
-        "hour": {0},
-        "day": {1, 5, 9, 13, 17, 21, 25, 28},  # Every other day (odd days of month)
-        "run_at_startup": True,
-    }
-}
-
-# Generate cron jobs and schedules automatically
-SCHEDULES = {}
-cron_jobs = []
-
-for job_name, config in JOB_DEFINITIONS.items():
-    # Create SCHEDULES entry with sorted minute list
-    minute_list = sorted(list(config["minute"]))
-    handler_name = config["handler"].__name__
-    run_at_startup = config.get("run_at_startup", False)
+def start_scheduler():
+    """Initialize and start the APScheduler background scheduler"""
+    logger.info("Starting APScheduler background scheduler")
     
-    schedule_dict = {
-        "minute": json.dumps(minute_list),
-        "handler": handler_name,
-        "run_at_startup": str(run_at_startup),
-    }
-    if "hour" in config:
-        schedule_dict["hour"] = json.dumps(sorted(list(config["hour"])))
-    if "day" in config:
-        schedule_dict["day"] = json.dumps(sorted(list(config["day"])))
+    # Run startup jobs immediately
+    logger.info("Enqueueing startup jobs")
+    sync_mqtt_topics_to_redis.send()
+    train_temperature_model.send()
+    logger.info("Startup jobs enqueued")
     
-    SCHEDULES[job_name] = schedule_dict
+    scheduler = BackgroundScheduler()
     
-    # Create cron job - pass all cron parameters
-    cron_kwargs = {
-        "run_at_startup": run_at_startup,
-        "minute": config["minute"],
-    }
-    if "hour" in config:
-        cron_kwargs["hour"] = config["hour"]
-    if "day" in config:
-        cron_kwargs["day"] = config["day"]
+    # Schedule MQTT sync every 5 minutes
+    scheduler.add_job(
+        sync_mqtt_topics_to_redis.send,
+        trigger=CronTrigger(minute="*/5"),
+        id="sync_mqtt_topics",
+        name="Sync MQTT topics to Redis",
+        replace_existing=True,
+    )
+    logger.info("Added job: sync_mqtt_topics_to_redis (every 5 min)")
     
-    cron_job = cron(config["handler"], **cron_kwargs)
-    cron_jobs.append(cron_job)
+    # Schedule Open Meteo fetch at :00 and :30 every hour
+    scheduler.add_job(
+        fetch_open_meteo_data.send,
+        trigger=CronTrigger(minute="0,30"),
+        id="fetch_open_meteo",
+        name="Fetch Open Meteo data",
+        replace_existing=True,
+    )
+    logger.info("Added job: fetch_open_meteo_data (at :00 and :30)")
+    
+    # Schedule temperature model training on odd days at midnight UTC
+    scheduler.add_job(
+        train_temperature_model.send,
+        trigger=CronTrigger(hour=0, minute=0, day="1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31"),
+        id="train_temperature",
+        name="Train temperature model",
+        replace_existing=True,
+    )
+    logger.info("Added job: train_temperature_model (odd days at 00:00 UTC)")
+    
+    scheduler.start()
+    logger.info("Background scheduler STARTED - jobs are active")
+    return scheduler
 
-# Make individual cron references available
-sync_mqtt_cron = cron_jobs[0]
-fetch_meteo_cron = cron_jobs[1]
-train_temp_cron = cron_jobs[2]
 
-
-async def publish_schedules_to_redis():
-    """Publish job schedules to Redis on worker startup"""
+if __name__ == "__main__":
+    scheduler = start_scheduler()
     try:
-        redis = await aioredis.from_url(REDIS_URL, decode_responses=True)
-        for job_name, schedule_info in SCHEDULES.items():
-            await redis.hset(f"job:schedule:{job_name}", mapping=schedule_info)
-        await redis.close()
-    except Exception as e:
-        logger.error(f"Failed to publish schedules to Redis: {e}")
-
+        import signal
+        signal.pause()
+    except KeyboardInterrupt:
+        scheduler.shutdown()

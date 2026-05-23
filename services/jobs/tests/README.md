@@ -1,116 +1,126 @@
 # Jobs Service Tests
 
-Comprehensive test suite for the Jobs microservice, including handler functions, scheduler configuration, and API integration.
-
-## Test Coverage
-
-### test_handlers.py
-- **TestTokenManager**: OAuth2 token fetching, caching, and refresh logic
-- **TestSyncMqttTopicsHandler**: MQTT topic synchronization from API to Redis
-- **TestFetchOpenMeteoHandler**: Open Meteo weather data API integration
-- **TestProcessObservationsHandler**: Observation data processing
-
-### test_scheduler.py
-- **TestRedisSettings**: Redis connection settings parsing
-- **TestSchedulerConfig**: Cron job configuration validation
-- **TestPublishSchedules**: Publishing schedules to Redis
-- **TestWorkerSettings**: ARQ worker configuration
-
-## Installation
-
-Install test dependencies:
-
-```bash
-cd services/jobs
-pip install -e ".[test]"
-```
-
-Or with Poetry:
-
-```bash
-poetry install --with test
-```
+Comprehensive test suite for the Dramatiq-based jobs service.
 
 ## Running Tests
 
-### Run all tests
+### All tests
 ```bash
-pytest tests/
+pytest
 ```
 
-### Run specific test file
+### Specific test file
 ```bash
-pytest tests/test_handlers.py
+pytest tests/test_tasks.py
+pytest tests/test_scheduler.py
+pytest tests/test_broker.py
 ```
 
-### Run specific test class
+### Specific test class
 ```bash
-pytest tests/test_handlers.py::TestTokenManager
+pytest tests/test_tasks.py::TestFetchOpenMeteoData
 ```
 
-### Run with coverage
+### Specific test
 ```bash
-pytest tests/ --cov=app --cov-report=html
+pytest tests/test_tasks.py::TestFetchOpenMeteoData::test_fetch_current_data_first_run
 ```
 
-### Run with verbose output
+### With verbose output
 ```bash
-pytest tests/ -v
+pytest -v
 ```
 
-### Run only synchronous tests
+### With coverage
 ```bash
-pytest tests/ -k "not async"
+pytest --cov=app tests/
 ```
 
-## Test Fixtures
+## Test Coverage
 
-Fixtures defined in `conftest.py`:
+### test_tasks.py
+Tests for Dramatiq task actors:
+- **TestFetchOpenMeteoData**: Open Meteo API integration
+  - First run (current data fetch)
+  - Retry runs (historical data fetch)
+  - Error handling (system not found, no datastreams)
+  - Hourly data extraction
+  - Partial observations
+  - API errors
+  - Result time preservation
+  - Bulk observation creation
 
-- `mock_redis`: Mock async Redis client
-- `jobs_env`: Environment variable setup
-- `mock_api_context`: ARQ job context mock
-- `sample_systems`: Sample system data from API
-- `sample_datastreams`: Sample datastream data from API
-- `sample_weather_data`: Sample Open Meteo API response
-- `mock_httpx_client`: Mock httpx async client
-- `mock_token_manager`: Mock OAuth2 token manager
-- `event_loop`: Async event loop for tests
+- **TestSyncMqttTopics**: MQTT topic synchronization
+- **TestTrainTemperatureModel**: Temperature model training with Prophet
+- **TestTaskActorConfiguration**: Verify Dramatiq actor setup
 
-## Key Testing Patterns
+### test_scheduler.py
+Tests for APScheduler configuration:
+- Scheduler initialization
+- Job registration (MQTT, Open Meteo, Temperature Model)
+- Cron trigger schedules
+  - MQTT: every 5 minutes
+  - Open Meteo: at :00 and :30 each hour
+  - Temperature Model: odd days at midnight UTC
+- Startup job enqueueing
 
-### Testing Handler Functions
-```python
-@pytest.mark.asyncio
-async def test_handler(self, mock_api_context):
-    result = await handle_sync_mqtt_topics_to_redis(mock_api_context)
-    # Assert on result
+### test_broker.py
+Tests for Dramatiq broker:
+- Broker configuration
+- Actor registration
+- Actor naming
+- Retry options configuration
+
+## Test Fixtures (conftest.py)
+
+### Environment
+- `jobs_env`: Sets up required environment variables
+
+### Mock Data
+- `sample_systems`: Mock system objects from API
+- `sample_datastreams`: Mock datastream objects
+- `sample_weather_current`: Open Meteo current weather response
+- `sample_weather_hourly`: Open Meteo hourly weather response
+- `mock_httpx_client`: Mocked HTTP client with pre-configured responses
+
+## Key Testing Features
+
+### Mocking Strategy
+- Uses `unittest.mock` for all external dependencies
+- HTTP calls are mocked with realistic Open Meteo API responses
+- Redis/database calls are mocked
+- Prophet model training is mocked
+
+### Historical Data Testing
+Tests specifically verify the retry behavior for historical data:
+- When a job retries, it fetches hourly data instead of current data
+- Result time is preserved across retries
+- Correct hour is extracted from hourly response
+
+### Error Scenarios
+- API not found errors
+- Missing datastreams
+- Missing weather data fields
+- HTTP errors
+
+## Running from Docker
+
+When running tests in the Docker container:
+
+```bash
+docker compose exec jobs-worker pytest
+docker compose exec jobs-worker pytest tests/test_tasks.py -v
 ```
 
-### Mocking API Responses
-```python
-with patch("app.handlers.httpx.AsyncClient") as mock_client_class:
-    mock_client = AsyncMock()
-    mock_response = AsyncMock()
-    mock_response.json = AsyncMock(return_value={"data": "value"})
-    mock_client.get = AsyncMock(return_value=mock_response)
-    # Use in test
-```
+Or build and run a test-focused image:
 
-### Testing Token Caching
-```python
-@pytest.mark.asyncio
-async def test_token_caching(self):
-    manager = TokenManager()
-    manager._token = "cached-token"
-    manager._expires_at = 9999999999  # Future
-    token = await manager.get_token()
-    assert token == "cached-token"
+```bash
+docker compose exec jobs-worker poetry run pytest
 ```
 
 ## Notes
 
-- Tests use `pytest-asyncio` for async test support
-- All Redis calls are mocked to avoid requiring running services
-- HTTP calls are mocked to avoid external API calls during testing
-- ARQ jobs run within test context and don't actually execute in background
+- Tests use synchronous mocking of Dramatiq actors (no actual queue needed)
+- All external API calls are mocked
+- Tests verify both happy path and error scenarios
+- Cron job triggers are validated via `CronTrigger` mock verification

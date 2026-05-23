@@ -1,5 +1,5 @@
-"""Job queue module - uses arq for async job processing"""
+"""Job queue module - uses Dramatiq for async job processing"""
 
-from .queue import get_redis_settings, get_redis_pool
+from .broker import broker
 
-__all__ = ["get_redis_settings", "get_redis_pool"]
+__all__ = ["broker"]

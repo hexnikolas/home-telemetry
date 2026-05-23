@@ -1,27 +1,28 @@
 [project]
 name = "jobs"
 version = "0.1.0"
-description = ""
+description = "Job queue service using Dramatiq"
 authors = [
-    {name = "Nikos",email = "nikos.zacharatos@iccs.gr"}
+    {name = "Nikos", email = "nikos.zacharatos@iccs.gr"}
 ]
 readme = "README.md"
 requires-python = ">=3.10,<4"
 dependencies = [
-    "arq>=0.25.0,<1.0.0",
-    "httpx (>=0.28.1,<0.29.0)",
+    "dramatiq[redis]>=1.15.0,<2.0.0",
+    "httpx>=0.28.1,<0.29.0",
     "loguru>=0.7.2,<1.0.0",
     "pandas>=2.0.0,<3.0.0",
     "prophet>=1.1.5,<2.0.0",
     "aio-pika>=9.6.2,<10.0.0",
-    "redis>=7.2.1,<8.0.0",
+    "redis>=5.0.0,<6.0.0",
+    "apscheduler>=3.10.0,<4.0.0",
 ]
 
 [project.optional-dependencies]
 test = [
-    "pytest (>=7.4.0,<8.0.0)",
-    "pytest-asyncio (>=0.23.0,<1.0.0)",
-    "pytest-cov (>=4.1.0,<5.0.0)",
+    "pytest>=7.4.0,<8.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+    "pytest-cov>=4.1.0,<5.0.0",
 ]
 
 [tool.poetry.dependencies]

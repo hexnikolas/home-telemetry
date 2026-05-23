@@ -20,5 +20,5 @@ RUN cd services/jobs && poetry install
 
 WORKDIR /app/services/jobs
 
-# Run arq worker with built-in scheduler and cron job support
-CMD ["arq", "app.worker.WorkerSettings"]
+# Run Dramatiq worker with scheduler (1 process, 4 threads each)
+CMD ["python", "-m", "dramatiq", "app.worker", "-p", "1", "-t", "4"]

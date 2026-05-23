@@ -1,258 +1,90 @@
-# Background Job Queue Service
+# Jobs Service - Dramatiq
 
-Standalone microservice for processing background jobs from a Redis queue with periodic scheduling support.
+Background job processing service using Dramatiq with Redis broker for the home-telemetry platform.
 
-## Important: Shared Infrastructure
+## Features
 
-This service **reuses existing infrastructure** from other services:
-
-| Service | Location | Used By |
-|---------|----------|---------|
-| **Redis** | `services/redis/` | API enqueues jobs, Jobs service consumes them |
-| **Database** | `services/db/` | Optional - if handlers need DB access |
-| **MQTT** | `services/mqtt_broker/` | Optional - if handlers need MQTT |
-
-You **do NOT** need separate instances for the jobs service—it communicates with your existing infrastructure via network connections only.
+- **Open Meteo Weather Data**: Fetches weather data every 30 minutes at :00 and :30
+- **Automatic Retry**: Failed jobs automatically retry up to 10 times with 5-minute intervals
+- **Result Time Preservation**: Original timestamp is maintained across all retries, preventing data gaps
+- **MQTT Topic Syncing**: Synchronizes sensor configurations every 5 minutes
+- **Temperature Model Training**: Trains Prophet models for temperature forecasting
+- **Lightweight**: Uses Dramatiq for minimal overhead
 
 ## Architecture
 
-```
-FastAPI (API Service)           Job Service
-      │                              │
-      ├─ Enqueue job via Redis ──────┤
-      │                              │
-      │                   ┌─────────────────┐
-      │                   │ Redis Queue     │
-      │                   ├─────────────────┤
-      │                   │ job:uuid        │
-      │                   │ queue:type      │
-      │                   │ schedules       │
-      │                   └─────────────────┘
-      │                              ↑
-      │              ┌───────────────┼───────────────┐
-      │              │               │               │
-      │         ┌─────────┐   ┌──────────┐   ┌──────────┐
-      │         │ Worker1 │   │ Worker2  │   │Scheduler │
-      │         └─────────┘   └──────────┘   └──────────┘
-      │              │               │               │
-      └──────────────┼───────────────┼───────────────┘
-                     │               │
-                 GET /jobs/status/id │
-              returns result/status  │
-```
+- **Broker**: Redis-backed Dramatiq broker
+- **Tasks**: Asynchronous job tasks with retry policies
+- **Scheduler**: APScheduler for periodic task execution
+- **Worker**: Multi-process Dramatiq worker (4 processes by default)
 
-## Quick Start (Local Development with Poetry)
+## Configuration
 
-### Prerequisites
-- Python 3.10+
-- Redis running on localhost:6379
-- API service running (it will create jobs in Redis)
+Set these environment variables in `.env`:
 
-### 1. Install dependencies with Poetry
-```bash
-poetry install
-```
+- `REDIS_URL`: Redis connection URL (default: `redis://localhost:6379/0`)
+- `API_URL`: Home Telemetry API URL (default: `http://localhost:8000`)
+- `API_CLIENT_ID`: OAuth2 client ID
+- `API_CLIENT_SECRET`: OAuth2 client secret
+- `OPEN_METEO_LATITUDE`: Weather station latitude (default: `37.7749`)
+- `OPEN_METEO_LONGITUDE`: Weather station longitude (default: `-122.4194`)
+- `OUTSIDE_TEMP_DATASTREAM_ID`: Datastream ID for temperature model training
+- `LOG_LEVEL`: Logging level (default: `INFO`)
+- `LOG_FORMAT`: Logging format - `json` or `colored` (default: `json`)
 
-### 2. Start Worker (process jobs)
-```bash
-poetry run python -m app.worker
-```
-
-### 3. Start Scheduler (periodic jobs) - optional Terminal
-```bash
-poetry run python -m app.scheduler
-```
-
-## Running with Docker Compose
-
-**Important:** This assumes you already have Redis, DB, and MQTT running (from `services/redis/`, `services/db/`, etc).
-
-From the `jobs/` directory:
-
-```bash
-docker-compose up
-```
-
-This starts only:
-- Jobs Worker
-- Jobs Scheduler
-
-**Network Configuration:** The jobs services will need to reach your Redis instance. Make sure they're on the same Docker network or use proper host resolution.
-
-To connect to services on the host machine from Docker:
-```yaml
-# In jobs/docker-compose.yml
-jobs-worker:
-  environment:
-    - REDIS_URL=redis://host.docker.internal:6379/0  # macOS/Windows Docker
-    # or
-    - REDIS_URL=redis://<your-host-ip>:6379/0        # Linux
-```
-
-## Running without Docker (Fastest for Testing)
-
-Ideal for rapid development and testing. **Prerequisites:** Redis running on localhost:6379
-
-
-**Worker:**
-```bash
-cd services/jobs
-poetry install
-poetry run python -m app.worker
-```
-
-**Scheduler (optional):**
-```bash
-cd services/jobs
-poetry run python -m app.scheduler
-```
-
-Then from your API service, enqueue jobs via REST API and they'll be processed immediately!
-
-## Adding New Jobs
-
-### 1. Create handler in `app/handlers.py`
-```python
-async def handle_my_job(data: Dict[str, Any]) -> Dict:
-    print(f"Processing: {data}")
-    # Your logic here
-    return {"result": "success"}
-```
-
-### 2. Register in both worker and scheduler
-
-`app/worker.py`:
-```python
-job_queue.register_handler("my_job", handle_my_job)
-```
-
-`app/scheduler.py`:
-```python
-job_queue.register_handler("my_job", handle_my_job)
-```
-
-### 3. Optional: Add periodic scheduling in `app/scheduler.py`
-```python
-async def setup_schedules():
-    await job_queue.schedule_periodic_job(
-        job_type="my_job",
-        data={"key": "value"},
-        interval_minutes=30
-    )
-```
-
-### 4. Enqueue from API
-```bash
-curl -X POST "http://localhost:8000/api/v1/jobs/enqueue" \
-  -H "Content-Type: application/json" \
-  -d '{"job_type": "my_job", "data": {"key": "value"}}'
-```
-
-Returns:
-```json
-{
-  "job_id": "abc123...",
-  "job_type": "my_job",
-  "status": "pending",
-  "created_at": "2024-03-06T12:00:00"
-}
-```
-
-### 5. Check status from API
-```bash
-curl "http://localhost:8000/api/v1/jobs/status/abc123/"
-```
-
-## Environment Variables
-
-- `REDIS_URL` - Redis connection URL (default: `redis://localhost:6379/0`)
-
-## Scaling
-
-### Multiple Workers (for parallelism)
-```bash
-# Terminal 2
-poetry run python -m app.worker
-
-# Terminal 3 (another worker)
-poetry run python -m app.worker
-
-# Terminal 4 (another worker)
-poetry run python -m app.worker
-```
-
-Or in Docker:
-```yaml
-jobs-worker:
-  deploy:
-    replicas: 3  # 3 parallel workers
-```
-
-### Single Scheduler (important!)
-Always run exactly **1 scheduler instance** to prevent duplicate scheduling.
-
-## Job Lifecycle
-
-```
-1. API enqueues job
-   └─ Stored in Redis as job:uuid
-   └─ Added to queue:job_type
-
-2. Worker polls from queue:job_type
-   └─ Updates status to RUNNING
-
-3. Worker executes handler
-   └─ On success: status = COMPLETED, stores result
-   └─ On failure: status = FAILED, stores error
-
-4. Job expires after 7 days (auto-cleanup)
-```
-
-## Monitoring
-
-### Watch worker logs (local)
-```bash
-poetry run python -m app.worker  # Shows all job processing
-```
-
-### Check Redis queue directly
-```bash
-redis-cli
-> KEYS queue:*
-> LLEN queue:scrape_energy_prices
-> HGETALL job:abc123
-```
-
-### Check job status via API
-```bash
-curl "http://localhost:8000/api/v1/jobs/status/{job_id}"
-```
-
-## Testing
-
-Run tests with pytest:
-```bash
-poetry run pytest
-```
-
-## Poetry Commands
+## Running Locally
 
 ```bash
 # Install dependencies
 poetry install
 
-# Add a new dependency
-poetry add package-name
-
-# Add dev dependency
-poetry add --group dev package-name
-
-# Update dependencies
-poetry update
-
-# Run a command in venv
-poetry run python script.py
-
-# Activate venv
-poetry shell
+# Run worker with scheduler
+dramatiq app.worker -p 4 -t 4
 ```
+
+## Docker
+
+```bash
+# Build and run
+docker-compose up --build
+
+# View logs
+docker-compose logs -f jobs-worker
+
+# Stop
+docker-compose down
+```
+
+## Scheduled Jobs
+
+| Job | Schedule | Purpose |
+|-----|----------|---------|
+| sync_mqtt_topics_to_redis | Every 5 minutes | Sync MQTT topic configuration |
+| fetch_open_meteo_data | :00 and :30 each hour | Fetch weather data with auto-retry |
+| train_temperature_model | Odd days at 00:00 UTC | Train temperature forecast model |
+
+## Retry Strategy
+
+The `fetch_open_meteo_data` task implements intelligent retry:
+- **Trigger**: On any failure (network, API errors, etc.)
+- **Retry Count**: Up to 10 attempts
+- **Interval**: Exactly 5 minutes between retries
+- **Timestamp**: Original measurement time is preserved across all retries
+- **Outcome**: If it fails at :00 but succeeds at :05, the observation is recorded with :00 timestamp
+
+This ensures no data gaps in your dataset even during transient API failures.
+
+## Migration from ARQ
+
+This service replaces the previous ARQ-based jobs service. The old service is backed up in `jobs_arq/`.
+
+### Key Differences
+
+| Aspect | ARQ | Dramatiq |
+|--------|-----|----------|
+| Retry Support | Limited | First-class with policies |
+| Retry Timing | Complex workarounds | Built-in `@retry` decorator |
+| Task Serialization | Function references | Robust message queue |
+| Periodic Tasks | Built-in cron | APScheduler integration |
+| Memory Footprint | ~15-17% | ~15-17% (similar) |
+

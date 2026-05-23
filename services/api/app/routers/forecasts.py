@@ -11,6 +11,9 @@ import pandas as pd
 from logger.logging_config import logger
 from pydantic import BaseModel
 import json
+from dramatiq.brokers.redis import RedisBroker
+from dramatiq import Message
+
 
 router = APIRouter()
 
@@ -270,48 +273,40 @@ async def retrain_temperature_model() -> dict:
         else:
             logger.info("No existing model metadata found, proceeding with retrain")
         
-        # 3. Publish to RabbitMQ queue for jobs worker to process
-        import aio_pika
-        
-        rabbitmq_url = os.getenv("RABBITMQ_URL")
-        if not rabbitmq_url:
-            logger.error("RABBITMQ_URL environment variable not configured")
+        # 3. Push message directly to Dramatiq queue in Redis
+        try:
+            import uuid
+            
+            # Create message in Dramatiq format
+            message_id = str(uuid.uuid4())
+            message = {
+                "actor_name": "train_temperature_model",
+                "args": [],
+                "kwargs": {},
+                "options": {},
+                "message_id": message_id,
+                "message_timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+            }
+            
+            # Push to Dramatiq's default queue in Redis
+            import json as json_module
+            queue_key = "dramatiq:default"
+            await redis.rpush(queue_key, json_module.dumps(message))
+            
+            # Set the in-progress flag in Redis (task will clear it when done)
+            await redis.set(RETRAIN_IN_PROGRESS_KEY, "true", ex=3600)  # 1 hour timeout
+            
+            logger.info("Training message enqueued to Dramatiq", extra={"message_id": message_id})
+        except Exception as e:
+            logger.error(f"Failed to enqueue training message: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Service not properly configured",
+                detail="Failed to enqueue retrain job",
             )
-        connection = await aio_pika.connect(rabbitmq_url)
-        channel = await connection.channel()
-        
-        # Declare the queue (will be created if it doesn't exist)
-        queue_name = "model.retrain"
-        queue = await channel.declare_queue(queue_name, durable=True)
-        
-        # Publish the retrain message
-        message_body = json.dumps({
-            "requested_at": datetime.now(timezone.utc).isoformat(),
-        })
-        
-        message = aio_pika.Message(
-            body=message_body.encode(),
-            content_type="application/json",
-            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-        )
-        
-        await channel.default_exchange.publish(message, routing_key=queue_name)
-        await connection.close()
-        
-        logger.info(
-            "Retrain message published to RabbitMQ",
-            extra={
-                "datastream_id": datastream_id,
-                "queue": queue_name
-            }
-        )
         
         return {
             "status": "success",
-            "message": "Model retrain message enqueued",
+            "message": "Model retraining job enqueued",
             "datastream_id": datastream_id,
         }
         

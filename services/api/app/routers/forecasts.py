@@ -273,32 +273,35 @@ async def retrain_temperature_model() -> dict:
         else:
             logger.info("No existing model metadata found, proceeding with retrain")
         
-        # 3. Push message directly to Dramatiq queue in Redis
+        # 3. Enqueue task via Dramatiq using Message and broker.enqueue
         try:
-            import uuid
+            from dramatiq.brokers.redis import RedisBroker
+            from dramatiq import Message
             
-            # Create message in Dramatiq format
-            message_id = str(uuid.uuid4())
-            message = {
-                "actor_name": "train_temperature_model",
-                "args": [],
-                "kwargs": {},
-                "options": {},
-                "message_id": message_id,
-                "message_timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-            }
+            redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
             
-            # Push to Dramatiq's default queue in Redis
-            import json as json_module
-            queue_key = "dramatiq:default"
-            await redis.rpush(queue_key, json_module.dumps(message))
+            # Create broker
+            broker = RedisBroker(url=redis_url)
+            
+            # Declare the default queue (ensure it exists)
+            broker.declare_queue("default")
+            
+            # Create and enqueue the message directly
+            message = Message(
+                queue_name="default",
+                actor_name="train_temperature_model",
+                args=(),
+                kwargs={},
+                options={}
+            )
+            broker.enqueue(message)
             
             # Set the in-progress flag in Redis (task will clear it when done)
             await redis.set(RETRAIN_IN_PROGRESS_KEY, "true", ex=3600)  # 1 hour timeout
             
-            logger.info("Training message enqueued to Dramatiq", extra={"message_id": message_id})
+            logger.info("Training task enqueued via Dramatiq", extra={"actor": "train_temperature_model", "message_id": message.message_id})
         except Exception as e:
-            logger.error(f"Failed to enqueue training message: {str(e)}")
+            logger.error(f"Failed to enqueue training task: {str(e)}", extra={"error_type": type(e).__name__})
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to enqueue retrain job",

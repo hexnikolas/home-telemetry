@@ -411,17 +411,33 @@ def train_temperature_model(datastream_id: Optional[str] = None) -> None:
     
     Fetches 30 days of historical data from the temperature datastream,
     trains a Prophet model, and caches it in Redis for use by the forecast API.
+    
+    Uses a distributed Redis lock to ensure only one worker executes this at a time.
     """
     datastream_id = datastream_id or os.getenv("OUTSIDE_TEMP_DATASTREAM_ID")
     RETRAIN_IN_PROGRESS_KEY = "model:retrain:in_progress"
+    LOCK_KEY = "model:retrain:lock"
+    LOCK_TIMEOUT = 600  # 10 minutes
     
     if not datastream_id:
         logger.error("No datastream_id configured")
         return
     
+    import redis
+    r = redis.from_url(REDIS_URL, decode_responses=True)
+    
+    # Try to acquire distributed lock
+    lock_acquired = r.set(LOCK_KEY, "1", nx=True, ex=LOCK_TIMEOUT)
+    
+    if not lock_acquired:
+        logger.warning(
+            "Model training already in progress (locked by another worker), skipping",
+            extra={"datastream_id": datastream_id}
+        )
+        r.close()
+        return
+    
     try:
-        import redis
-        r = redis.from_url(REDIS_URL, decode_responses=True)
         token = token_manager.get_token()
         
         logger.info("Starting temperature model training", extra={"datastream_id": datastream_id})
@@ -453,17 +469,18 @@ def train_temperature_model(datastream_id: Optional[str] = None) -> None:
             extra={"datastream_id": datastream_id, "error": str(e)}
         )
     finally:
-        # Clear the in-progress flag regardless of success/failure
+        # Clear the in-progress flag and release the lock
         try:
-            import redis
-            r = redis.from_url(REDIS_URL, decode_responses=True)
             r.delete(RETRAIN_IN_PROGRESS_KEY)
+            r.delete(LOCK_KEY)
             logger.info(
-                "Cleared retrain in-progress flag",
+                "Cleared retrain in-progress flag and released lock",
                 extra={"datastream_id": datastream_id}
             )
         except Exception as e:
             logger.warning(
-                "Failed to clear retrain in-progress flag",
+                "Failed to clear retrain in-progress flag or release lock",
                 extra={"datastream_id": datastream_id, "error": str(e)}
             )
+        finally:
+            r.close()

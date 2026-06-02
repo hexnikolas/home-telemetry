@@ -180,7 +180,7 @@ def sync_mqtt_topics_to_redis() -> None:
     min_backoff=5*60*1000,  # 5 minutes in milliseconds
     max_backoff=5*60*1000,  # No exponential backoff, always 5 min
 )
-def fetch_open_meteo_data(result_time: Optional[str] = None, is_retry: bool = False) -> None:
+def fetch_open_meteo_data(result_time: Optional[str] = None, is_retry: bool = False) -> Dict[str, Any]:
     """
     Fetch weather data from Open Meteo API and create observations.
     
@@ -220,7 +220,11 @@ def fetch_open_meteo_data(result_time: Optional[str] = None, is_retry: bool = Fa
         
         if not systems:
             logger.error("Open Meteo system not found")
-            return
+            return {
+                "status": "error",
+                "message": "Open Meteo system not found",
+                "result_time": result_time,
+            }
         
         system = systems[0]
         system_id = system["id"]
@@ -238,7 +242,11 @@ def fetch_open_meteo_data(result_time: Optional[str] = None, is_retry: bool = Fa
         
         if not datastreams:
             logger.error("No datastreams found for Open Meteo system")
-            return
+            return {
+                "status": "error",
+                "message": "No datastreams found for Open Meteo system",
+                "result_time": result_time,
+            }
         
         # 3. Map datastreams by name
         ds_mapping = {}
@@ -402,6 +410,13 @@ def fetch_open_meteo_data(result_time: Optional[str] = None, is_retry: bool = Fa
                 "system_id": system_id,
             }
         )
+        
+        return {
+            "status": "success",
+            "observations_created": observations_created,
+            "result_time": result_time,
+            "is_retry": is_retry,
+        }
 
 
 @dramatiq.actor()

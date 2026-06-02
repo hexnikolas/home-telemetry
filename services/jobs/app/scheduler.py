@@ -43,7 +43,7 @@ def start_scheduler():
     )
     logger.info("Added job: fetch_open_meteo_data (at :00 and :30)")
     
-    # Schedule temperature model training on odd days at midnight UTC
+    # Schedule temperature model training on all days at midnight UTC
     scheduler.add_job(
         train_temperature_model.send,
         trigger=CronTrigger(hour=0, minute=0, day="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31"),
@@ -51,7 +51,7 @@ def start_scheduler():
         name="Train temperature model",
         replace_existing=True,
     )
-    logger.info("Added job: train_temperature_model (odd days at 00:00 UTC)")
+    logger.info("Added job: train_temperature_model (all days at 00:00 UTC)")
     
     scheduler.start()
     logger.info("Background scheduler STARTED - jobs are active")

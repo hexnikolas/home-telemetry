@@ -92,8 +92,12 @@ class TestQueueConnection:
             
             await queue.connect()
             
-            # Verify queue was declared as durable
-            mock_channel.declare_queue.assert_called_once_with(QUEUE_NAME, durable=True)
+            # Verify queue was declared as durable with max-length enforcement
+            mock_channel.declare_queue.assert_called_once_with(
+                QUEUE_NAME,
+                durable=True,
+                arguments={"x-max-length": 50000, "x-overflow": "reject-publish"}
+            )
 
     @pytest.mark.asyncio
     async def test_disconnect_closes_connection(self):

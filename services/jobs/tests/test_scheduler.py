@@ -117,7 +117,7 @@ class TestScheduler:
             assert any("0,30" in str(c) for c in calls)
 
     def test_cron_trigger_temperature_model_on_odd_days(self):
-        """Test that temperature model training is scheduled on odd days at midnight."""
+        """Test that temperature model training is scheduled on all days at midnight."""
         with patch("app.scheduler.BackgroundScheduler") as mock_scheduler_class:
             mock_scheduler = MagicMock()
             mock_scheduler_class.return_value = mock_scheduler
@@ -128,7 +128,8 @@ class TestScheduler:
                         with patch("app.scheduler.train_temperature_model"):
                             scheduler = start_scheduler()
             
-            # Check CronTrigger was called with correct day pattern for odd days
+            # Check CronTrigger was called with correct day pattern for all days
             calls = [c for c in mock_cron_class.call_args_list]
-            # Should have calls with odd days: 1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31
-            assert any("1,3,5,7,9" in str(c) for c in calls)
+            # Should have calls with all days: 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+            # Check the keyword arguments for the day pattern
+            assert any("1,2,3,4,5" in str(c.kwargs.get("day", "")) for c in calls)

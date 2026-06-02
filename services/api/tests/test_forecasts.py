@@ -296,6 +296,7 @@ class TestRetrainTemperatureModel:
         # No existing model metadata, no retrain in progress
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.set = AsyncMock()
         mock_redis.close = AsyncMock()
         
         mock_connection = AsyncMock()
@@ -305,23 +306,32 @@ class TestRetrainTemperatureModel:
         
         async_mock_from_url = AsyncMock(return_value=mock_redis)
         
+        # Mock Dramatiq RedisBroker and Message
+        mock_broker = MagicMock()
+        mock_broker.declare_queue = MagicMock()
+        mock_broker.enqueue = MagicMock()
+        mock_message = MagicMock()
+        mock_message.message_id = "test-message-id"
+        
         with patch("app.routers.forecasts.aioredis.from_url", async_mock_from_url):
             with patch("aio_pika.connect", return_value=mock_connection):
                 with patch("app.routers.forecasts.os.getenv") as mock_getenv:
-                    def getenv_side_effect(key, default=None):
-                        if key == "OUTSIDE_TEMP_DATASTREAM_ID":
-                            return "test-datastream-uuid"
-                        elif key == "REDIS_URL":
-                            return "redis://redis:6379/0"
-                        elif key == "RABBITMQ_URL":
-                            return "amqp://rabbitmq:5672"
-                        elif key == "SERVICE_API_KEY":
-                            return "secret-key"
-                        return default
-                    
-                    mock_getenv.side_effect = getenv_side_effect
-                    
-                    result = await retrain_temperature_model()
+                    with patch("dramatiq.brokers.redis.RedisBroker", return_value=mock_broker):
+                        with patch("dramatiq.Message", return_value=mock_message):
+                            def getenv_side_effect(key, default=None):
+                                if key == "OUTSIDE_TEMP_DATASTREAM_ID":
+                                    return "test-datastream-uuid"
+                                elif key == "REDIS_URL":
+                                    return "redis://redis:6379/0"
+                                elif key == "RABBITMQ_URL":
+                                    return "amqp://rabbitmq:5672"
+                                elif key == "SERVICE_API_KEY":
+                                    return "secret-key"
+                                return default
+                            
+                            mock_getenv.side_effect = getenv_side_effect
+                            
+                            result = await retrain_temperature_model()
         
         assert result["status"] == "success"
         assert "enqueued" in result["message"].lower()
@@ -475,6 +485,7 @@ class TestRetrainTemperatureModel:
         mock_redis = AsyncMock()
         # First call: no in-progress flag; second call: metadata
         mock_redis.get = AsyncMock(side_effect=[None, json.dumps(metadata)])
+        mock_redis.set = AsyncMock()
         mock_redis.close = AsyncMock()
         
         mock_connection = AsyncMock()
@@ -484,20 +495,29 @@ class TestRetrainTemperatureModel:
         
         async_mock_from_url = AsyncMock(return_value=mock_redis)
         
+        # Mock Dramatiq RedisBroker and Message
+        mock_broker = MagicMock()
+        mock_broker.declare_queue = MagicMock()
+        mock_broker.enqueue = MagicMock()
+        mock_message = MagicMock()
+        mock_message.message_id = "test-message-id"
+        
         with patch("app.routers.forecasts.aioredis.from_url", async_mock_from_url):
             with patch("aio_pika.connect", return_value=mock_connection):
                 with patch("app.routers.forecasts.os.getenv") as mock_getenv:
-                    def getenv_side_effect(key, default=None):
-                        if key == "OUTSIDE_TEMP_DATASTREAM_ID":
-                            return "test-datastream-uuid"
-                        elif key == "REDIS_URL":
-                            return "redis://redis:6379/0"
-                        elif key == "RABBITMQ_URL":
-                            return "amqp://rabbitmq:5672"
-                        return default
-                    
-                    mock_getenv.side_effect = getenv_side_effect
-                    
-                    result = await retrain_temperature_model()
+                    with patch("dramatiq.brokers.redis.RedisBroker", return_value=mock_broker):
+                        with patch("dramatiq.Message", return_value=mock_message):
+                            def getenv_side_effect(key, default=None):
+                                if key == "OUTSIDE_TEMP_DATASTREAM_ID":
+                                    return "test-datastream-uuid"
+                                elif key == "REDIS_URL":
+                                    return "redis://redis:6379/0"
+                                elif key == "RABBITMQ_URL":
+                                    return "amqp://rabbitmq:5672"
+                                return default
+                            
+                            mock_getenv.side_effect = getenv_side_effect
+                            
+                            result = await retrain_temperature_model()
         
         assert result["status"] == "success"

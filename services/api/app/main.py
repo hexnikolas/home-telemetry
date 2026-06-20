@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import asyncio
+import app.database as db_module
 from app.database import init_engine, init_db
 from app.routers import systems, deployments, procedures, features_of_interest, observed_properties, datastreams, observations, admin, forecasts
 from app.routers.auth import router as auth_router
@@ -9,6 +11,7 @@ from app.middlewares import CorrelationIdMiddleware, RequestLoggingMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 from dotenv import load_dotenv
+from app.grpc_server import serve as serve_grpc
 
 # Load .env
 load_dotenv()
@@ -132,14 +135,25 @@ async def lifespan(app: FastAPI):
     try:
         init_engine()  # creates engine from env vars
         logger.info("Database engine initialized")
-        
+
         await init_db()
         logger.info("Database initialized and seeded if needed")
     except Exception as e:
         logger.error("Failed to start API", extra={"error": str(e)})
         raise
 
+    # Start gRPC server as async task
+    grpc_task = asyncio.create_task(serve_grpc(db_module.AsyncSessionFactory, host="0.0.0.0", port=50051))
+    logger.info("gRPC server task created")
+
     yield
+
+    # Shutdown gRPC server
+    grpc_task.cancel()
+    try:
+        await grpc_task
+    except asyncio.CancelledError:
+        logger.info("gRPC server shutdown")
 
     logger.info("API shutdown complete")
 

@@ -19,4 +19,6 @@ RUN cd services/api && poetry install --without dev
 
 WORKDIR /app/services/api
 
+EXPOSE 8000 50051
+
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

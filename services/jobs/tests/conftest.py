@@ -1,7 +1,15 @@
 import pytest
 import os
+import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
+
+
+# Make shared top-level packages (protos/logger/schemas) importable in tests.
+SHARED_DIR = Path(__file__).resolve().parents[3] / "shared"
+if str(SHARED_DIR) not in sys.path:
+    sys.path.insert(0, str(SHARED_DIR))
 
 
 @pytest.fixture

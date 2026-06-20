@@ -453,8 +453,6 @@ def train_temperature_model(datastream_id: Optional[str] = None) -> None:
         return
     
     try:
-        token = token_manager.get_token()
-        
         logger.info("Starting temperature model training", extra={"datastream_id": datastream_id})
         
         # Note: train_and_cache_model is async but called from a sync actor context
@@ -468,7 +466,6 @@ def train_temperature_model(datastream_id: Optional[str] = None) -> None:
         try:
             model_id = loop.run_until_complete(train_and_cache_model(
                 datastream_id=datastream_id,
-                token=token,
             ))
         finally:
             loop.close()

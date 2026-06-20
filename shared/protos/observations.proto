@@ -1,0 +1,25 @@
+syntax = "proto3";
+package observations;
+
+service ObservationService {
+  // Stream observations for a datastream, optionally filtered by time range
+  rpc GetObservations(GetObservationsRequest) returns (stream Observation);
+}
+
+message GetObservationsRequest {
+  string datastream_id = 1;  // UUID format
+  string time_start = 2;     // ISO 8601, optional
+  string time_end = 3;       // ISO 8601, optional
+  int32 limit = 4;           // default 1000
+}
+
+message Observation {
+  string id = 1;
+  string datastream_id = 2;
+  string result_time = 3;
+  optional double result_numeric = 4;
+  optional string result_text = 5;
+  optional bool result_boolean = 6;
+  optional string result_complex = 7;  // JSON string
+  map<string, string> parameters = 8;
+}

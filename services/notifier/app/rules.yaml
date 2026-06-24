@@ -20,7 +20,7 @@ rules:
   - datastream_id: "d84925e1-c18c-4605-90be-3e0079e868f5"
     name: "High Temperature"
     condition: ">"
-    threshold: 30.0
+    threshold: 40.0
     priority: 8
     cooldown_minutes: 29
 

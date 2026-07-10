@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch, call
 from datetime import datetime, timezone, timedelta
 import json
+import httpx
 
 from app.tasks import fetch_open_meteo_data, sync_mqtt_topics_to_redis, train_temperature_model
 
@@ -200,6 +201,61 @@ class TestFetchOpenMeteoData:
                 # Verify bulk POST was called and observations were created
                 assert result["status"] == "success"
                 assert result["observations_created"] > 0
+
+    def test_open_meteo_client_retries_transient_connect_error(self, sample_systems, sample_datastreams, sample_weather_current):
+        """Test transient Open Meteo connection errors are retried in-process."""
+        mock_client = MagicMock()
+
+        mock_response_systems = MagicMock()
+        mock_response_systems.json.return_value = sample_systems
+        mock_response_systems.raise_for_status = MagicMock()
+
+        mock_response_datastreams = MagicMock()
+        mock_response_datastreams.json.return_value = sample_datastreams
+        mock_response_datastreams.raise_for_status = MagicMock()
+
+        mock_response_weather = MagicMock()
+        mock_response_weather.json.return_value = sample_weather_current
+        mock_response_weather.raise_for_status = MagicMock()
+
+        mock_response_observations = MagicMock()
+        mock_response_observations.raise_for_status = MagicMock()
+
+        open_meteo_calls = {"count": 0}
+
+        def mock_get(url, params=None, headers=None):
+            if "systems" in url:
+                return mock_response_systems
+            if "datastreams" in url:
+                return mock_response_datastreams
+            if "open-meteo" in url:
+                open_meteo_calls["count"] += 1
+                if open_meteo_calls["count"] < 3:
+                    raise httpx.ConnectError("Temporary failure in name resolution")
+                return mock_response_weather
+            return MagicMock()
+
+        def mock_post(url, json=None, headers=None):
+            if "observations" in url and "bulk" in url:
+                return mock_response_observations
+            return MagicMock()
+
+        mock_client.get = mock_get
+        mock_client.post = mock_post
+        mock_client.__enter__ = lambda self: self
+        mock_client.__exit__ = lambda self, *args: None
+
+        with patch("app.tasks.httpx.Client", return_value=mock_client):
+            with patch("app.tasks.token_manager") as mock_token_mgr:
+                with patch("app.tasks.time.sleep") as mock_sleep:
+                    mock_token_mgr.get_token.return_value = "test-token"
+
+                    result = fetch_open_meteo_data()
+
+        assert result["status"] == "success"
+        assert result["observations_created"] == 3
+        assert open_meteo_calls["count"] == 3
+        assert mock_sleep.call_count == 2
 
 
 class TestSyncMqttTopics:

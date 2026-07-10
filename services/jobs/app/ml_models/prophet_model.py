@@ -33,7 +33,7 @@ API_TOKEN_URL = f"{_api_base}/auth/token"
 
 async def train_and_cache_model(
     datastream_id: str,
-    days: int = 50,
+    days: int = 80,
     token: Optional[str] = None,
 ) -> Dict[str, Any]:
     """

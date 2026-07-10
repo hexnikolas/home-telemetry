@@ -28,10 +28,10 @@ class ModelInfo(BaseModel):
 
 
 # @router.get("/outside-temp", response_model=TemperatureForecast, summary="Get 12-hour Temperature Forecast", dependencies=[Depends(require_scope("observations:read"))])
-@router.get("/outside-temp/public", response_model=TemperatureForecast, summary="Get 12-hour Temperature Forecast (Public)")
+@router.get("/outside-temp/public", response_model=TemperatureForecast, summary="Get 24-hour Temperature Forecast (Public)")
 async def get_temperature_forecast(request: Request) -> TemperatureForecast:
     """
-    Get 12-hour temperature forecast for outside temperature datastream.
+    Get 24-hour temperature forecast for outside temperature datastream.
     
     Uses the cached Prophet model trained on 30 days of historical data.
     Returns forecasts at 30-minute intervals with 95% confidence intervals.
@@ -54,10 +54,10 @@ async def get_temperature_forecast(request: Request) -> TemperatureForecast:
         # Unpickle the model
         model = pickle.loads(model_bytes)
         
-        # Generate forecast for next 12 hours at 30-minute intervals from now
+        # Generate forecast for next 24 hours at 30-minute intervals from now
         now = datetime.now(timezone.utc)
         now_pd = pd.Timestamp(now).tz_localize(None)  # Remove timezone for Prophet
-        future_periods = 24  # 24 x 30-minute intervals = 12 hours
+        future_periods = 48  # 48 x 30-minute intervals = 24 hours
         
         # Create dataframe with timestamps from now to now + 12 hours at 30-minute intervals
         from pandas import date_range

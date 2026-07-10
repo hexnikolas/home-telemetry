@@ -28,6 +28,8 @@ BATCH_SIZE = 100
 OPEN_METEO_API_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_LATITUDE = float(os.getenv("OPEN_METEO_LATITUDE", "37.7749"))
 OPEN_METEO_LONGITUDE = float(os.getenv("OPEN_METEO_LONGITUDE", "-122.4194"))
+OPEN_METEO_REQUEST_MAX_ATTEMPTS = int(os.getenv("OPEN_METEO_REQUEST_MAX_ATTEMPTS", "3"))
+OPEN_METEO_REQUEST_RETRY_DELAY_SECONDS = float(os.getenv("OPEN_METEO_REQUEST_RETRY_DELAY_SECONDS", "5"))
 
 # Auth configuration
 API_CLIENT_ID = os.getenv("API_CLIENT_ID", "")
@@ -73,6 +75,33 @@ class TokenManager:
 
 
 token_manager = TokenManager()
+
+
+def _fetch_open_meteo_with_retry(client: httpx.Client, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Retry transient network/DNS failures before escalating to Dramatiq retry."""
+    last_error: Optional[httpx.RequestError] = None
+
+    for attempt in range(1, OPEN_METEO_REQUEST_MAX_ATTEMPTS + 1):
+        try:
+            response = client.get(OPEN_METEO_API_URL, params=params)
+            response.raise_for_status()
+            return response.json()
+        except httpx.RequestError as exc:
+            last_error = exc
+            logger.warning(
+                "Open Meteo request failed",
+                extra={
+                    "attempt": attempt,
+                    "max_attempts": OPEN_METEO_REQUEST_MAX_ATTEMPTS,
+                    "error": str(exc),
+                },
+            )
+
+            if attempt < OPEN_METEO_REQUEST_MAX_ATTEMPTS:
+                time.sleep(OPEN_METEO_REQUEST_RETRY_DELAY_SECONDS)
+
+    assert last_error is not None
+    raise last_error
 
 
 @dramatiq.actor()
@@ -293,12 +322,7 @@ def fetch_open_meteo_data(result_time: Optional[str] = None, is_retry: bool = Fa
             # On first run, fetch current data
             params["current"] = "temperature_2m,relative_humidity_2m,dew_point_2m"
         
-        weather_response = client.get(
-            OPEN_METEO_API_URL,
-            params=params
-        )
-        weather_response.raise_for_status()
-        weather_data = weather_response.json()
+        weather_data = _fetch_open_meteo_with_retry(client=client, params=params)
         
         # Extract data based on whether it's current or historical
         if is_retry:

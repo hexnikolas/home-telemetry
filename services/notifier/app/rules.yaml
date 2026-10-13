@@ -13,7 +13,7 @@ rules:
   - datastream_id: "08f166d2-398c-4ea2-959f-c146dc3406e1"
     name: "High Power Usage"
     condition: ">"
-    threshold: 250.0
+    threshold: 400.0
     priority: 8
     cooldown_minutes: 10
 

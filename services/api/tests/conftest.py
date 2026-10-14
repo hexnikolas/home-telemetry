@@ -4,7 +4,7 @@ from testcontainers.postgres import PostgresContainer
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 from app.models import Base
-from app.database import init_engine
+from app.database import init_engine, ensure_observations_unified_view
 from app.main import app
 from app.auth.jwt import create_access_token
 from sqlalchemy import text
@@ -50,12 +50,15 @@ def init_test_engine(db_url):
 @pytest.mark.asyncio
 async def setup_tables(db_url):
     engine = create_async_engine(db_url, poolclass=NullPool)
+    tables = [t for t in Base.metadata.sorted_tables if t.name != "observations_unified"]
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS timescaledb;"))
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=tables))
+        await ensure_observations_unified_view(conn)
     yield
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(text("DROP VIEW IF EXISTS observations_unified"))
+        await conn.run_sync(lambda sync_conn: Base.metadata.drop_all(sync_conn, tables=tables))
     await engine.dispose()
 
 

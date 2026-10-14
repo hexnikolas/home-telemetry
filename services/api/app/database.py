@@ -62,9 +62,34 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     from app import models  # noqa: F401
+    tables = [t for t in Base.metadata.sorted_tables if t.name != "observations_unified"]
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=tables))
+        await ensure_observations_unified_view(conn)
     await seed_db()
+
+
+async def ensure_observations_unified_view(conn) -> None:
+    """
+    Ensure `observations_unified` exists for environments where it wasn't
+    provisioned via the TimescaleDB initdb SQL scripts (e.g. test containers
+    that don't mount services/db/timescaledb/initdb). In production this
+    view (raw observations + hourly-averaged history) is already created by
+    services/db/timescaledb/initdb/003_observations_unified_view.sql, so this
+    is a no-op there.
+
+    `ObservationUnified` is excluded from Base.metadata.create_all/drop_all
+    (see init_db() and tests/conftest.py) precisely so it never gets created
+    as a plain empty table here.
+    """
+    result = await conn.execute(text("SELECT to_regclass('public.observations_unified')"))
+    if result.scalar() is None:
+        await conn.execute(text(
+            "CREATE VIEW observations_unified AS "
+            "SELECT id, datastream_id, result_time, result_complex, result_numeric, "
+            "result_text, result_boolean, parameters FROM observations"
+        ))
+
 
 
 async def seed_db() -> None:

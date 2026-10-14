@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.future import select
 from sqlalchemy import desc
-from app.models import Observation
+from app.models import Observation, ObservationUnified
 from app.filters import apply_filters, apply_time_range
 from fastapi import HTTPException
 from uuid import UUID
@@ -41,12 +41,21 @@ async def get_observation(db: AsyncSession, observation_id: UUID) -> Observation
     return observation
 
 
-async def get_all_observations(db: AsyncSession, limit: int = 50, offset: int = 0, filters: dict[str, Any] | None = None, time_start: datetime | None = None, time_end: datetime | None = None) -> List[Observation]:
-    statement = select(Observation)
+async def get_all_observations(db: AsyncSession, limit: int = 50, offset: int = 0, filters: dict[str, Any] | None = None, time_start: datetime | None = None, time_end: datetime | None = None) -> List[ObservationUnified]:
+    """
+    Search/list observations across the full retained history.
+
+    Reads from `observations_unified`, which combines raw readings (last 2
+    days) with hourly averages for anything older. Read-only: creating,
+    updating, or deleting individual observations is only possible against
+    the raw `observations` table (see get_observation/create_observation/
+    update_observation/delete_observation below).
+    """
+    statement = select(ObservationUnified).order_by(desc(ObservationUnified.result_time))
     if filters:
-        statement = apply_filters(statement, Observation, filters)
+        statement = apply_filters(statement, ObservationUnified, filters)
     if time_start is not None:
-        statement = apply_time_range(statement, Observation.result_time, time_start, time_end)
+        statement = apply_time_range(statement, ObservationUnified.result_time, time_start, time_end)
     statement = statement.limit(limit).offset(offset)
     result = await db.execute(statement)
     observations = result.scalars().all()

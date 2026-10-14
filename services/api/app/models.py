@@ -438,3 +438,29 @@ event.listen(
     'after_create',
     DDL(f"SELECT create_hypertable('{Observation.__tablename__}', 'result_time', if_not_exists => TRUE, chunk_time_interval => interval '1 day');")
 )
+
+
+class ObservationUnified(Base):
+    """
+    Read-only mapping onto the `observations_unified` view (see
+    services/db/timescaledb/initdb/003_observations_unified_view.sql).
+
+    Combines raw readings (last 2 days, from `observations`) with hourly
+    averages for anything older (from the `observations_hourly` continuous
+    aggregate), so searches/listing can span the full retained history.
+
+    This is for reads only. Writes (create/update/delete) must go through
+    `Observation`/`observations` directly: averaged historical rows have no
+    real `id` and don't correspond to a single physical row that can be
+    updated or deleted.
+    """
+    __tablename__ = "observations_unified"
+
+    id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True))
+    datastream_id: Mapped[Optional[uuid.UUID]] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    result_time: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), primary_key=True)
+    result_complex: Mapped[Optional[dict]] = mapped_column(JSON)
+    result_numeric: Mapped[Optional[float]] = mapped_column(Float)
+    result_text: Mapped[Optional[str]] = mapped_column(Text)
+    result_boolean: Mapped[Optional[bool]] = mapped_column(Boolean)
+    parameters: Mapped[Optional[dict]] = mapped_column(JSON)

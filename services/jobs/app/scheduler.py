@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from logger.logging_config import logger
-from app.tasks import sync_mqtt_topics_to_redis, fetch_open_meteo_data, train_temperature_model
+from app.tasks import sync_mqtt_topics_to_redis, fetch_open_meteo_data, train_temperature_model, cleanup_old_gotify_messages
 
 
 def start_scheduler():
@@ -52,6 +52,16 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info("Added job: train_temperature_model (all days at 00:00 UTC)")
+    
+    # Schedule Gotify message cleanup weekly, Sunday at 03:00 UTC
+    scheduler.add_job(
+        cleanup_old_gotify_messages.send,
+        trigger=CronTrigger(day_of_week="sun", hour=3, minute=0),
+        id="cleanup_gotify_messages",
+        name="Cleanup old Gotify messages",
+        replace_existing=True,
+    )
+    logger.info("Added job: cleanup_old_gotify_messages (weekly, Sunday 03:00 UTC)")
     
     scheduler.start()
     logger.info("Background scheduler STARTED - jobs are active")

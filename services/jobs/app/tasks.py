@@ -7,7 +7,7 @@ import json
 from typing import Any, Dict, Optional
 import httpx
 import redis.asyncio as aioredis
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import dramatiq
 from logger.logging_config import logger
 from app.broker import broker
@@ -38,6 +38,12 @@ _api_base = API_URL.split("/api/")[0] if "/api/" in API_URL else API_URL
 API_TOKEN_URL = f"{_api_base}/auth/token"
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+# Gotify configuration
+GOTIFY_URL = os.getenv("GOTIFY_URL", "http://gotify:80")
+GOTIFY_ADMIN_USER = os.getenv("GOTIFY_ADMIN_USER", "")
+GOTIFY_ADMIN_PASS = os.getenv("GOTIFY_ADMIN_PASS", "")
+GOTIFY_MESSAGE_RETENTION_DAYS = int(os.getenv("GOTIFY_MESSAGE_RETENTION_DAYS", "60"))
 
 
 class TokenManager:
@@ -520,3 +526,64 @@ def train_temperature_model(datastream_id: Optional[str] = None) -> None:
             )
         finally:
             r.close()
+
+
+@dramatiq.actor()
+def cleanup_old_gotify_messages(retention_days: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Delete Gotify notification messages older than the configured retention period.
+
+    Gotify has no built-in message expiry, so messages accumulate forever. This
+    paginates through all messages via the REST API and deletes any whose date
+    is older than the cutoff, authenticating with the admin user's basic auth
+    credentials (required to list/delete messages across all applications).
+    """
+    retention_days = retention_days if retention_days is not None else GOTIFY_MESSAGE_RETENTION_DAYS
+
+    if not GOTIFY_ADMIN_USER or not GOTIFY_ADMIN_PASS:
+        logger.warning("Gotify admin credentials not configured, skipping message cleanup")
+        return {"status": "skipped", "reason": "missing_credentials"}
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    logger.info(
+        "Starting Gotify message cleanup",
+        extra={"retention_days": retention_days, "cutoff": cutoff.isoformat()},
+    )
+
+    deleted = 0
+    inspected = 0
+    since: Optional[int] = None
+
+    with httpx.Client(timeout=30.0, auth=(GOTIFY_ADMIN_USER, GOTIFY_ADMIN_PASS)) as client:
+        while True:
+            params: Dict[str, Any] = {"limit": 200}
+            if since is not None:
+                params["since"] = since
+
+            response = client.get(f"{GOTIFY_URL}/message", params=params)
+            response.raise_for_status()
+            page = response.json()
+            messages = page.get("messages", [])
+
+            if not messages:
+                break
+
+            for msg in messages:
+                inspected += 1
+                msg_date = datetime.fromisoformat(msg["date"].replace("Z", "+00:00"))
+                if msg_date < cutoff:
+                    del_response = client.delete(f"{GOTIFY_URL}/message/{msg['id']}")
+                    if del_response.status_code not in (200, 404):
+                        del_response.raise_for_status()
+                    deleted += 1
+
+            paging = page.get("paging", {})
+            if not paging.get("next"):
+                break
+            since = paging.get("since")
+
+    logger.info(
+        "Gotify message cleanup complete",
+        extra={"inspected": inspected, "deleted": deleted, "retention_days": retention_days},
+    )
+    return {"status": "success", "inspected": inspected, "deleted": deleted}

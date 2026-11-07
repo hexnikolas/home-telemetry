@@ -29,6 +29,9 @@ Set these environment variables in `.env`:
 - `OPEN_METEO_LATITUDE`: Weather station latitude (default: `37.7749`)
 - `OPEN_METEO_LONGITUDE`: Weather station longitude (default: `-122.4194`)
 - `OUTSIDE_TEMP_DATASTREAM_ID`: Datastream ID for temperature model training
+- `GOTIFY_URL`: Base URL of the Gotify server (default: `http://gotify:80`)
+- `GOTIFY_ADMIN_USER` / `GOTIFY_ADMIN_PASS`: Gotify admin credentials used to list/delete messages
+- `GOTIFY_MESSAGE_RETENTION_DAYS`: Delete Gotify messages older than this many days (default: `60`)
 - `LOG_LEVEL`: Logging level (default: `INFO`)
 - `LOG_FORMAT`: Logging format - `json` or `colored` (default: `json`)
 
@@ -62,6 +65,7 @@ docker-compose down
 | sync_mqtt_topics_to_redis | Every 5 minutes | Sync MQTT topic configuration |
 | fetch_open_meteo_data | :00 and :30 each hour | Fetch weather data with auto-retry |
 | train_temperature_model | Odd days at 00:00 UTC | Train temperature forecast model |
+| cleanup_old_gotify_messages | Weekly, Sunday 03:00 UTC | Delete Gotify messages older than `GOTIFY_MESSAGE_RETENTION_DAYS` |
 
 ## Retry Strategy
 

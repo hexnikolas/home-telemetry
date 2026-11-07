@@ -4,7 +4,7 @@ Unit tests for message handlers - sensor data transformation
 import pytest
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
-from app.handlers import handle_sensor_SHT40, handle_sensor_A1T, _parse_time
+from app.handlers import handle_sensor_SHT40, handle_sensor_A1T, handle_sensor_ESP32C6_SOIL, _parse_time
 
 
 class TestParseTime:
@@ -338,3 +338,34 @@ class TestHandlerDataValidation:
         # Should only have Temperature observation
         assert len(observations) == 1
         assert observations[0].result_numeric == 22.5
+
+
+class TestSoilMoistureHandler:
+    """Test ESP32-C6 dual soil moisture handler"""
+
+    @pytest.mark.asyncio
+    async def test_both_ranges(self):
+        ds1, ds2 = str(uuid4()), str(uuid4())
+        data = {"Time": "2026-11-07T15:47:55", "ANALOG": {"Range1": 4, "Range2": 7}}
+
+        observations = await handle_sensor_ESP32C6_SOIL(data, {"Range1": ds1, "Range2": ds2})
+
+        assert len(observations) == 2
+        by_ds = {str(o.datastream_id): o.result_numeric for o in observations}
+        assert by_ds[ds1] == 4
+        assert by_ds[ds2] == 7
+
+    @pytest.mark.asyncio
+    async def test_missing_range_and_zero_value(self):
+        ds1, ds2 = str(uuid4()), str(uuid4())
+        data = {"Time": "2026-11-07T15:47:55", "ANALOG": {"Range1": 0}}
+
+        observations = await handle_sensor_ESP32C6_SOIL(data, {"Range1": ds1, "Range2": ds2})
+
+        assert len(observations) == 1
+        assert observations[0].result_numeric == 0
+
+    @pytest.mark.asyncio
+    async def test_no_analog_block(self):
+        observations = await handle_sensor_ESP32C6_SOIL({"Time": "2026-11-07T15:47:55"}, {"Range1": str(uuid4())})
+        assert observations == []

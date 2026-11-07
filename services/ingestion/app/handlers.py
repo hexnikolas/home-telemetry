@@ -97,12 +97,43 @@ async def handle_sensor_A1T(data: dict, datastreams: Dict[str, str]) -> List[Obs
     return observations
 
 
+async def handle_sensor_ESP32C6_SOIL(data: dict, datastreams: Dict[str, str]) -> List[ObservationWrite]:
+    """
+    Handle ESP32-C6 (Tasmota) dual analog soil moisture messages.
+
+    Payload: {"Time": "...", "ANALOG": {"Range1": 4, "Range2": 7}}  (values are % moisture, 0-100)
+
+    datastreams keys (set via properties.mqtt_key on each datastream):
+        "Range1", "Range2"
+    """
+    result_time = _parse_time(data)
+    analog = data.get("ANALOG", {})
+
+    readings = {
+        "Range1": analog.get("Range1"),
+        "Range2": analog.get("Range2"),
+    }
+
+    observations = []
+    for mqtt_key, value in readings.items():
+        ds_id = datastreams.get(mqtt_key)
+        if value is not None and ds_id:
+            observations.append(ObservationWrite(
+                datastream_id=ds_id,
+                result_time=result_time,
+                result_numeric=value,
+            ))
+
+    return observations
+
+
 # ==========================
 # MODEL → HANDLER REGISTRY
 # ==========================
 MODEL_HANDLERS = {
-    "SHT40": handle_sensor_SHT40,
-    "A1T":   handle_sensor_A1T,
+    "SHT40":        handle_sensor_SHT40,
+    "A1T":          handle_sensor_A1T,
+    "ESP32C6_SOIL": handle_sensor_ESP32C6_SOIL,
 }
 
 

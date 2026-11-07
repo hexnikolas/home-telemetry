@@ -53,6 +53,10 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      # The init job deletes and recreates the queues; the worker must start
+      # after it, otherwise its consumer is silently dropped with the old queue.
+      rabbitmq-init:
+        condition: service_completed_successfully
     restart: unless-stopped
     command: python -m app.worker
     healthcheck:

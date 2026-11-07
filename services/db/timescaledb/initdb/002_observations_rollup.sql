@@ -30,10 +30,20 @@ CREATE INDEX IF NOT EXISTS ix_observations_hourly_datastream_bucket
     ON observations_hourly (datastream_id, bucket DESC);
 
 -- Keep the rollup up to date automatically: every 30 min, (re)materialize
--- the window from 3 days ago up to 1 hour ago (end_offset leaves the most
+-- the window from 36 hours ago up to 1 hour ago (end_offset leaves the most
 -- recent, still-filling-up hour bucket alone).
+--
+-- IMPORTANT: start_offset MUST stay comfortably inside the raw retention
+-- window below (2 days). Each refresh fully recomputes its window from raw
+-- data; if start_offset reaches further back than retention keeps raw rows,
+-- the refresh will find no raw data for the already-dropped tail of its
+-- window and will overwrite the previously-correct aggregate rows there
+-- with nothing, silently deleting history that was already safely
+-- materialized. (This caused a real recurring daily gap in observations_hourly
+-- - see git history / incident notes - fixed by narrowing start_offset from
+-- 3 days to 36 hours.)
 SELECT add_continuous_aggregate_policy('observations_hourly',
-    start_offset => INTERVAL '3 days',
+    start_offset => INTERVAL '36 hours',
     end_offset => INTERVAL '1 hour',
     schedule_interval => INTERVAL '30 minutes',
     if_not_exists => TRUE
